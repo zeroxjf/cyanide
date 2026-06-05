@@ -9,6 +9,8 @@
 #import "tweaks/powercuff.h"
 #import "tweaks/statbar.h"
 #import "tweaks/private_compat.h"
+#import "tweaks/nsbar.h"
+#import "tweaks/nicebarlite.h"
 #import "tweaks/axonlite.h"
 #import "tweaks/darksword_tweaks.h"
 #import "tweaks/darksword_drag.h"
@@ -17,6 +19,8 @@
 #import "tweaks/nano_registry.h"
 #import "tweaks/killallapps.h"
 #import "tweaks/themer.h"
+#import "tweaks/snowboardlite.h"
+#import "tweaks/livewp.h"
 #import "tweaks/gravitylite.h"
 #import <CoreMotion/CoreMotion.h>
 
@@ -32,6 +36,7 @@
 #import "docs/DocsViewController.h"
 #import "PatreonAuth.h"
 #import "UpdateChecker.h"
+#import "SBLArchiveExtractor.h"
 #import <WebKit/WebKit.h>
 #import <MessageUI/MessageUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -164,6 +169,23 @@ NSString * const kSettingsStatBarShowCPU = @"StatBarShowCPU";
 NSString * const kSettingsStatBarShowLabels = @"StatBarShowLabels";
 NSString * const kSettingsStatBarRefreshRateSec = @"StatBarRefreshRateSec";
 
+NSString * const kSettingsNSBarEnabled = @"NSBarEnabled";
+NSString * const kSettingsNSBarPosition = @"NSBarPosition";
+
+NSString * const kSettingsNiceBarLiteEnabled = @"NiceBarLiteEnabled";
+static NSString * const kSettingsNiceBarLiteCelsius = @"NiceBarLiteCelsius";
+static NSString * const kSettingsNiceBarLiteSlotKindPrefix = @"NiceBarLiteSlotKind";
+static NSString * const kSettingsNiceBarLiteSlotSystemPrefix = @"NiceBarLiteSlotSystem";
+static NSString * const kSettingsNiceBarLiteSlotTextPrefix = @"NiceBarLiteSlotText";
+static NSString * const kSettingsNiceBarLiteSlotTimePrefix = @"NiceBarLiteSlotTime";
+static NSString * const kSettingsNiceBarLiteSlotWeatherPrefix = @"NiceBarLiteSlotWeather";
+static NSString * const kSettingsNiceBarLiteSlotSystemLanguagePrefix = @"NiceBarLiteSlotSystemLanguage";
+static NSString * const kSettingsNiceBarLiteLayoutTopSideInset = @"NiceBarLiteLayoutTopSideInset";
+static NSString * const kSettingsNiceBarLiteLayoutBottomSideInset = @"NiceBarLiteLayoutBottomSideInset";
+static NSString * const kSettingsNiceBarLiteLayoutTopY = @"NiceBarLiteLayoutTopY";
+static NSString * const kSettingsNiceBarLiteLayoutBottomY = @"NiceBarLiteLayoutBottomY";
+static NSString * const kSettingsNiceBarLiteLayoutCenterX = @"NiceBarLiteLayoutCenterX";
+
 NSString * const kSettingsRSSIDisplayEnabled = @"RSSIDisplayEnabled";
 NSString * const kSettingsRSSIDisplayWifi    = @"RSSIDisplayWifi";
 NSString * const kSettingsRSSIDisplayCell    = @"RSSIDisplayCell";
@@ -194,6 +216,12 @@ NSString * const kSettingsThemerEnabled = @"ThemerEnabled";
 NSString * const kSettingsThemerThemeID = @"ThemerThemeID";
 NSString * const kSettingsThemerCustomThemePath = @"ThemerCustomThemePath";
 NSString * const kSettingsThemerCustomThemeName = @"ThemerCustomThemeName";
+
+NSString * const kSettingsSnowBoardLiteEnabled = @"SnowBoardLiteEnabled";
+NSString * const kSettingsSnowBoardLiteSelectedThemeID = @"SnowBoardLiteSelectedThemeID";
+
+NSString * const kSettingsLiveWPEnabled = @"LiveWPEnabled";
+NSString * const kSettingsLiveWPVideoPath = @"LiveWPVideoPath";
 
 // Master gate for experimental tweaks. When NO (default), packages that opt
 // into the experimental category are hidden from the Installer and the
@@ -236,6 +264,10 @@ static volatile int g_springboard_rc_ready = 0;
 static volatile int g_springboard_sandbox_escaped = 0;
 static volatile int g_statbar_live_running = 0;
 static volatile int g_statbar_live_stop_requested = 0;
+static volatile int g_nsbar_live_running = 0;
+static volatile int g_nsbar_live_stop_requested = 0;
+static volatile int g_nicebarlite_live_running = 0;
+static volatile int g_nicebarlite_live_stop_requested = 0;
 static volatile int g_rssi_live_running = 0;
 static volatile int g_rssi_live_stop_requested = 0;
 static volatile int g_axonlite_live_running = 0;
@@ -251,6 +283,8 @@ static volatile int g_themer_live_running = 0;
 static volatile int g_themer_live_stop_requested = 0;
 static volatile int g_themer_repair_running = 0;
 static volatile uint64_t g_themer_repair_generation = 0;
+static volatile int g_livewp_live_running = 0;
+static volatile int g_livewp_live_stop_requested = 0;
 
 static void settings_mark_tweak_applied(NSString *key, BOOL applied);
 static void settings_notify_package_queue_changed_async(void);
@@ -347,6 +381,8 @@ typedef struct {
 } SettingsSpringBoardTweakCleanupEntry;
 
 static void settings_request_statbar_stop(void) { g_statbar_live_stop_requested = 1; }
+static void settings_request_nsbar_stop(void) { g_nsbar_live_stop_requested = 1; }
+static void settings_request_nicebarlite_stop(void) { g_nicebarlite_live_stop_requested = 1; }
 static void settings_request_rssi_stop(void) { g_rssi_live_stop_requested = 1; }
 static void settings_request_axonlite_stop(void) { g_axonlite_live_stop_requested = 1; }
 static void settings_request_typebanner_stop(void) { g_typebanner_live_stop_requested = 1; }
@@ -357,17 +393,33 @@ static void settings_request_gravitylite_stop(void)
     settings_stop_gravity_motion();
 }
 static void settings_request_stagestrip_stop(void) { stagestrip_stop_control_loop(); }
+static void settings_request_livewp_stop(void) { g_livewp_live_stop_requested = 1; }
 
 static BOOL settings_statbar_running(void) { return g_statbar_live_running != 0; }
+static BOOL settings_nsbar_running(void) { return g_nsbar_live_running != 0; }
+static BOOL settings_nicebarlite_running(void) { return g_nicebarlite_live_running != 0; }
 static BOOL settings_rssi_running(void) { return g_rssi_live_running != 0; }
 static BOOL settings_axonlite_running(void) { return g_axonlite_live_running != 0; }
 static BOOL settings_typebanner_running(void) { return g_typebanner_live_running != 0; }
 static BOOL settings_themer_running(void) { return g_themer_live_running != 0 || g_themer_repair_running != 0; }
+static BOOL settings_livewp_running(void) { return g_livewp_live_running != 0; }
 
 static bool settings_stop_statbar_registered(BOOL springboardWillDie)
 {
     (void)springboardWillDie;
     return statbar_stop_in_session();
+}
+
+static bool settings_stop_nsbar_registered(BOOL springboardWillDie)
+{
+    (void)springboardWillDie;
+    return nsbar_stop_in_session();
+}
+
+static bool settings_stop_nicebarlite_registered(BOOL springboardWillDie)
+{
+    (void)springboardWillDie;
+    return nicebarlite_stop_in_session();
 }
 
 static bool settings_stop_rssi_registered(BOOL springboardWillDie)
@@ -410,6 +462,12 @@ static bool settings_stop_stagestrip_registered(BOOL springboardWillDie)
     return stagestrip_stop_in_session();
 }
 
+static bool settings_stop_livewp_registered(BOOL springboardWillDie)
+{
+    (void)springboardWillDie;
+    return livewp_stop_in_session();
+}
+
 static void settings_each_springboard_cleanup_entry(void (^block)(const SettingsSpringBoardTweakCleanupEntry *entry))
 {
     if (!block) return;
@@ -417,11 +475,15 @@ static void settings_each_springboard_cleanup_entry(void (^block)(const Settings
     // termination cleanup, live-loop waits, and applied-state reset stay in sync.
     const SettingsSpringBoardTweakCleanupEntry entries[] = {
         { kSettingsStatBarEnabled, "StatBar", settings_request_statbar_stop, settings_stop_statbar_registered, statbar_forget_remote_state, settings_statbar_running, YES, YES },
+        { kSettingsNSBarEnabled, "NSBar", settings_request_nsbar_stop, settings_stop_nsbar_registered, nsbar_forget_remote_state, settings_nsbar_running, YES, YES },
+        { kSettingsNiceBarLiteEnabled, "NiceBar Lite", settings_request_nicebarlite_stop, settings_stop_nicebarlite_registered, nicebarlite_forget_remote_state, settings_nicebarlite_running, YES, YES },
         { kSettingsRSSIDisplayEnabled, "RSSI", settings_request_rssi_stop, settings_stop_rssi_registered, rssidisplay_forget_remote_state, settings_rssi_running, YES, YES },
         { kSettingsAxonLiteEnabled, "Axon Lite", settings_request_axonlite_stop, settings_stop_axonlite_registered, axonlite_forget_remote_state, settings_axonlite_running, YES, YES },
         { kSettingsTypeBannerEnabled, "TypeBanner", settings_request_typebanner_stop, settings_stop_typebanner_registered, typebanner_forget_remote_state, settings_typebanner_running, YES, YES },
         { kSettingsGravityLiteEnabled, "Gravity Lite", settings_request_gravitylite_stop, settings_stop_gravitylite_registered, gravitylite_forget_remote_state, NULL, YES, YES },
         { kSettingsThemerEnabled, "Themer", settings_request_themer_stop, settings_stop_themer_registered, themer_forget_remote_state, settings_themer_running, YES, YES },
+        { kSettingsSnowBoardLiteEnabled, "SnowBoard Lite", settings_request_themer_stop, settings_stop_themer_registered, themer_forget_remote_state, settings_themer_running, YES, YES },
+        { kSettingsLiveWPEnabled, "LiveWP", settings_request_livewp_stop, settings_stop_livewp_registered, livewp_forget_remote_state, settings_livewp_running, YES, YES },
         { kSettingsStageStripEnabled, "Stage Strip", settings_request_stagestrip_stop, settings_stop_stagestrip_registered, stagestrip_forget_remote_state, NULL, YES, YES },
         { nil, "Kill All Apps", NULL, NULL, killallapps_forget_remote_state, NULL, NO, NO },
     };
@@ -490,6 +552,15 @@ static const NSInteger kNanoUIRowMax = 999;
 static const useconds_t kStatBarLiveIntervalUS = 1000000;
 static const NSInteger kStatBarDefaultRefreshRateSec = 1;
 static const NSUInteger kStatBarLiveMaxTicks = 43200;
+static const useconds_t kNSBarLiveIntervalUS = 1000000;
+static const useconds_t kNSBarLiveBackgroundIntervalUS = 1500000;
+static const NSUInteger kNSBarLiveMaxTicks = 43200;
+static const useconds_t kNiceBarLiteLiveIntervalUS = 1000000;
+static const useconds_t kNiceBarLiteLiveBackgroundIntervalUS = 1500000;
+static const NSUInteger kNiceBarLiteLiveMaxTicks = 43200;
+static const useconds_t kLiveWPLiveIntervalUS = 2000000;
+static const useconds_t kLiveWPLiveBackgroundIntervalUS = 3000000;
+static const NSUInteger kLiveWPLiveMaxTicks = 43200;
 static const int64_t kLiveBackgroundTaskGraceSeconds = 10;
 static const useconds_t kRSSILiveIntervalUS = 250000;
 static const useconds_t kRSSILiveBackgroundIntervalUS = 1000000;
@@ -657,6 +728,11 @@ static uint64_t settings_now_us(void) {
 }
 
 static void settings_apply_statbar_once_async(const char *reason);
+static void settings_apply_nsbar_once_async(const char *reason);
+static void settings_apply_nicebarlite_once_async(const char *reason);
+static void settings_start_livewp_live_loop(void);
+static void settings_resume_livewp_after_wake_async(const char *reason);
+static void settings_pause_livewp_for_sleep_async(const char *reason);
 static void settings_apply_rssi_once_async(const char *reason);
 static void settings_start_rssi_live_loop(void);
 static void settings_start_typebanner_live_loop(void);
@@ -960,6 +1036,9 @@ static void settings_install_screen_awake_observers(void)
             (void)token;
             if (settings_refresh_screen_awake_state("springboard.hasBlankedScreen")) {
                 settings_apply_statbar_once_async("screen awake");
+                settings_apply_nsbar_once_async("screen awake");
+                settings_apply_nicebarlite_once_async("screen awake");
+                settings_resume_livewp_after_wake_async("screen awake");
                 settings_schedule_themer_quiet_repair_burst("screen awake");
                 settings_restart_gravity_motion_if_active("screen awake");
             }
@@ -974,6 +1053,9 @@ static void settings_install_screen_awake_observers(void)
             (void)token;
             if (settings_refresh_screen_awake_state("iokit.displayStatus")) {
                 settings_apply_statbar_once_async("screen awake");
+                settings_apply_nsbar_once_async("screen awake");
+                settings_apply_nicebarlite_once_async("screen awake");
+                settings_resume_livewp_after_wake_async("display awake");
                 settings_schedule_themer_quiet_repair_burst("display awake");
                 settings_restart_gravity_motion_if_active("display awake");
             }
@@ -1708,6 +1790,114 @@ static bool settings_apply_sbc_from_defaults_locked(NSUserDefaults *d)
                                          (int)[d integerForKey:kSettingsSBCCols],
                                          (int)[d integerForKey:kSettingsSBCRows],
                                          [d boolForKey:kSettingsSBCHideLabels]);
+}
+
+static NSString *settings_nicebar_key(NSString *prefix, NSInteger slot)
+{
+    return [NSString stringWithFormat:@"%@%ld", prefix, (long)slot];
+}
+
+static NSString *settings_nicebar_slot_name(NSInteger slot)
+{
+    switch ((NiceBarLiteSlot)slot) {
+        case NiceBarLiteSlotTopLeft: return @"Top Left";
+        case NiceBarLiteSlotTopRight: return @"Top Right";
+        case NiceBarLiteSlotBottomLeft: return @"Bottom Left";
+        case NiceBarLiteSlotBottomRight: return @"Bottom Right";
+        case NiceBarLiteSlotBottomCenter: return @"Bottom Center";
+        case NiceBarLiteSlotCount: return @"Slot";
+    }
+    return @"Slot";
+}
+
+static NSString *settings_nicebar_kind_name(NSInteger kind)
+{
+    switch ((NiceBarLiteContentKind)kind) {
+        case NiceBarLiteContentOff: return @"Off";
+        case NiceBarLiteContentCustomText: return @"Custom Text";
+        case NiceBarLiteContentSystem: return @"System";
+        case NiceBarLiteContentTimeFormat: return @"Date / Time";
+        case NiceBarLiteContentWeather: return @"Weather Text";
+    }
+    return @"Off";
+}
+
+static NSString *settings_nicebar_system_name(NSInteger item)
+{
+    switch ((NiceBarLiteSystemItem)item) {
+        case NiceBarLiteSystemBatteryTemp: return @"Battery Temp";
+        case NiceBarLiteSystemFreeRAM: return @"Free RAM";
+        case NiceBarLiteSystemBatteryPercent: return @"Battery";
+        case NiceBarLiteSystemNetworkSpeed: return @"Network Speed";
+        case NiceBarLiteSystemUptime: return @"Uptime";
+        case NiceBarLiteSystemDate: return @"Date";
+        case NiceBarLiteSystemLunarDate: return @"Lunar Date";
+        case NiceBarLiteSystemTodayTraffic: return @"Today Traffic";
+        case NiceBarLiteSystemCurrentIP: return @"Current IP";
+        case NiceBarLiteSystemFreeDisk: return @"Free Disk";
+        case NiceBarLiteSystemThermalState: return @"Thermal State";
+    }
+    return @"System";
+}
+
+static NSString *settings_nsbar_position_name(NSInteger position)
+{
+    switch ((NSBarPosition)position) {
+        case NSBarPositionTopLeft: return @"Top Left";
+        case NSBarPositionBottomLeft: return @"Bottom Left";
+        case NSBarPositionTopRight: return @"Top Right";
+        case NSBarPositionBottomRight: return @"Bottom Right";
+        case NSBarPositionCenter: return @"Center";
+    }
+    return @"Top Left";
+}
+
+static NSString *settings_livewp_video_detail(void)
+{
+    NSString *path = livewp_absolute_path();
+    if (path.length == 0) return @"No video selected.";
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+    if (attrs) {
+        unsigned long long bytes = [attrs fileSize];
+        NSByteCountFormatter *fmt = [[NSByteCountFormatter alloc] init];
+        fmt.allowedUnits = NSByteCountFormatterUseMB | NSByteCountFormatterUseGB;
+        fmt.countStyle = NSByteCountFormatterCountStyleFile;
+        return [NSString stringWithFormat:@"%@ (%@)", path.lastPathComponent, [fmt stringFromByteCount:(long long)bytes]];
+    }
+    return [NSString stringWithFormat:@"%@ (missing)", path.lastPathComponent ?: path];
+}
+
+static NiceBarLiteConfig settings_nicebar_config_from_defaults(NSUserDefaults *d)
+{
+    NiceBarLiteConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.celsius = [d boolForKey:kSettingsNiceBarLiteCelsius];
+    cfg.topSideInsetOffset = [d integerForKey:kSettingsNiceBarLiteLayoutTopSideInset];
+    cfg.bottomSideInsetOffset = [d integerForKey:kSettingsNiceBarLiteLayoutBottomSideInset];
+    cfg.topYOffset = [d integerForKey:kSettingsNiceBarLiteLayoutTopY];
+    cfg.bottomYOffset = [d integerForKey:kSettingsNiceBarLiteLayoutBottomY];
+    cfg.centerXOffset = [d integerForKey:kSettingsNiceBarLiteLayoutCenterX];
+    cfg.updateMask = UINT32_MAX;
+
+    for (NSInteger i = 0; i < NiceBarLiteSlotCount; i++) {
+        NSString *text = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotTextPrefix, i)] ?: @"";
+        NSString *time = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotTimePrefix, i)] ?: @"HH:mm";
+        NSString *weather = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotWeatherPrefix, i)] ?: @"";
+        NSString *language = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemLanguagePrefix, i)] ?: @"en";
+        cfg.slots[i].kind = (int)[d integerForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, i)];
+        cfg.slots[i].systemItem = (int)[d integerForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, i)];
+        cfg.slots[i].customText = text.UTF8String;
+        cfg.slots[i].timeFormat = time.UTF8String;
+        cfg.slots[i].weatherText = weather.UTF8String;
+        cfg.slots[i].systemLanguage = language.UTF8String;
+    }
+    return cfg;
+}
+
+static bool settings_apply_nicebarlite_from_defaults_locked(NSUserDefaults *d)
+{
+    if (![d boolForKey:kSettingsNiceBarLiteEnabled]) return false;
+    return nicebarlite_apply_in_session(settings_nicebar_config_from_defaults(d));
 }
 
 static BOOL settings_dark_tweaks_any_enabled(NSUserDefaults *d)
@@ -2583,6 +2773,230 @@ static void settings_apply_statbar_once_async(const char *reason)
     });
 }
 
+static void settings_start_nsbar_live_loop(void)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsNSBarEnabled] || !g_springboard_rc_ready) return;
+
+    if (__sync_lock_test_and_set(&g_nsbar_live_running, 1)) return;
+    g_nsbar_live_stop_requested = 0;
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        NSUInteger tick = 0;
+        NSUInteger failures = 0;
+        @try {
+            while ([d boolForKey:kSettingsNSBarEnabled] &&
+                   !settings_cleanup_in_progress() &&
+                   !g_nsbar_live_stop_requested &&
+                   tick < kNSBarLiveMaxTicks) {
+                bool ok = false;
+                @synchronized (settings_rc_lock()) {
+                    if (settings_cleanup_in_progress() ||
+                        ![d boolForKey:kSettingsNSBarEnabled] ||
+                        !g_springboard_rc_ready) break;
+                    ok = nsbar_apply_in_session((NSBarPosition)[d integerForKey:kSettingsNSBarPosition]);
+                    settings_mark_tweak_applied(kSettingsNSBarEnabled,
+                                                ok && [d boolForKey:kSettingsNSBarEnabled]);
+                }
+                if (tick == 0 || !ok) {
+                    printf("[SETTINGS] NSBar live tick=%lu result=%d\n",
+                           (unsigned long)tick, ok);
+                }
+                failures = ok ? 0 : failures + 1;
+                if (failures >= settings_live_failure_limit(3)) break;
+                tick++;
+                settings_live_loop_sleep_interruptible(0,
+                    settings_live_interval(kNSBarLiveIntervalUS, kNSBarLiveBackgroundIntervalUS),
+                    &g_nsbar_live_stop_requested);
+            }
+        } @finally {
+            printf("[SETTINGS] NSBar live loop exited ticks=%lu enabled=%d failures=%lu stop=%d\n",
+                   (unsigned long)tick,
+                   [d boolForKey:kSettingsNSBarEnabled],
+                   (unsigned long)failures,
+                   g_nsbar_live_stop_requested);
+            __sync_lock_release(&g_nsbar_live_running);
+        }
+    });
+}
+
+static void settings_apply_nsbar_once_async(const char *reason)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsNSBarEnabled] || !g_springboard_rc_ready) return;
+    if (g_nsbar_live_running) return;
+
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        bool ok = false;
+        @synchronized (settings_rc_lock()) {
+            if (settings_cleanup_in_progress() ||
+                ![d boolForKey:kSettingsNSBarEnabled] ||
+                !g_springboard_rc_ready) return;
+            ok = nsbar_apply_in_session((NSBarPosition)[d integerForKey:kSettingsNSBarPosition]);
+            settings_mark_tweak_applied(kSettingsNSBarEnabled,
+                                        ok && [d boolForKey:kSettingsNSBarEnabled]);
+        }
+        printf("[SETTINGS] NSBar lifecycle apply%s%s result=%d\n",
+               reason ? ": " : "", reason ?: "", ok);
+        settings_start_nsbar_live_loop();
+        settings_notify_package_queue_changed_async();
+    });
+}
+
+static void settings_start_nicebarlite_live_loop(void)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsNiceBarLiteEnabled] || !g_springboard_rc_ready) return;
+
+    if (__sync_lock_test_and_set(&g_nicebarlite_live_running, 1)) return;
+    g_nicebarlite_live_stop_requested = 0;
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        NSUInteger tick = 0;
+        NSUInteger failures = 0;
+        @try {
+            while ([d boolForKey:kSettingsNiceBarLiteEnabled] &&
+                   !settings_cleanup_in_progress() &&
+                   !g_nicebarlite_live_stop_requested &&
+                   tick < kNiceBarLiteLiveMaxTicks) {
+                bool ok = false;
+                @synchronized (settings_rc_lock()) {
+                    if (settings_cleanup_in_progress() ||
+                        ![d boolForKey:kSettingsNiceBarLiteEnabled] ||
+                        !g_springboard_rc_ready) break;
+                    ok = settings_apply_nicebarlite_from_defaults_locked(d);
+                    settings_mark_tweak_applied(kSettingsNiceBarLiteEnabled,
+                                                ok && [d boolForKey:kSettingsNiceBarLiteEnabled]);
+                }
+                if (tick == 0 || !ok) {
+                    printf("[SETTINGS] NiceBar Lite live tick=%lu result=%d\n",
+                           (unsigned long)tick, ok);
+                }
+                failures = ok ? 0 : failures + 1;
+                if (failures >= settings_live_failure_limit(3)) break;
+                tick++;
+                settings_live_loop_sleep_interruptible(0,
+                    settings_live_interval(kNiceBarLiteLiveIntervalUS, kNiceBarLiteLiveBackgroundIntervalUS),
+                    &g_nicebarlite_live_stop_requested);
+            }
+        } @finally {
+            printf("[SETTINGS] NiceBar Lite live loop exited ticks=%lu enabled=%d failures=%lu stop=%d\n",
+                   (unsigned long)tick,
+                   [d boolForKey:kSettingsNiceBarLiteEnabled],
+                   (unsigned long)failures,
+                   g_nicebarlite_live_stop_requested);
+            __sync_lock_release(&g_nicebarlite_live_running);
+        }
+    });
+}
+
+static void settings_apply_nicebarlite_once_async(const char *reason)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsNiceBarLiteEnabled] || !g_springboard_rc_ready) return;
+    if (g_nicebarlite_live_running) return;
+
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        bool ok = false;
+        @synchronized (settings_rc_lock()) {
+            if (settings_cleanup_in_progress() ||
+                ![d boolForKey:kSettingsNiceBarLiteEnabled] ||
+                !g_springboard_rc_ready) return;
+            ok = settings_apply_nicebarlite_from_defaults_locked(d);
+            settings_mark_tweak_applied(kSettingsNiceBarLiteEnabled,
+                                        ok && [d boolForKey:kSettingsNiceBarLiteEnabled]);
+        }
+        printf("[SETTINGS] NiceBar Lite lifecycle apply%s%s result=%d\n",
+               reason ? ": " : "", reason ?: "", ok);
+        settings_start_nicebarlite_live_loop();
+        settings_notify_package_queue_changed_async();
+    });
+}
+
+static BOOL settings_livewp_should_play(void)
+{
+    return g_app_in_background == 0 && settings_screen_awake_cached();
+}
+
+static void settings_start_livewp_live_loop(void)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsLiveWPEnabled] || !g_springboard_rc_ready) return;
+
+    if (__sync_lock_test_and_set(&g_livewp_live_running, 1)) return;
+    g_livewp_live_stop_requested = 0;
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        NSUInteger tick = 0;
+        @try {
+            while ([d boolForKey:kSettingsLiveWPEnabled] &&
+                   !settings_cleanup_in_progress() &&
+                   !g_livewp_live_stop_requested &&
+                   tick < kLiveWPLiveMaxTicks) {
+                @synchronized (settings_rc_lock()) {
+                    if (settings_cleanup_in_progress() ||
+                        ![d boolForKey:kSettingsLiveWPEnabled] ||
+                        !g_springboard_rc_ready) break;
+                    if (settings_livewp_should_play()) {
+                        (void)livewp_resume_in_session();
+                        (void)livewp_repair_in_session();
+                    } else {
+                        (void)livewp_pause_in_session();
+                    }
+                }
+                tick++;
+                settings_live_loop_sleep_interruptible(0,
+                    settings_live_interval(kLiveWPLiveIntervalUS, kLiveWPLiveBackgroundIntervalUS),
+                    &g_livewp_live_stop_requested);
+            }
+        } @finally {
+            printf("[SETTINGS] LiveWP live loop exited ticks=%lu enabled=%d stop=%d\n",
+                   (unsigned long)tick,
+                   [d boolForKey:kSettingsLiveWPEnabled],
+                   g_livewp_live_stop_requested);
+            __sync_lock_release(&g_livewp_live_running);
+        }
+    });
+}
+
+static void settings_pause_livewp_for_sleep_async(const char *reason)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsLiveWPEnabled] || !g_springboard_rc_ready) return;
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        @synchronized (settings_rc_lock()) {
+            if (g_springboard_rc_ready) {
+                bool ok = livewp_pause_in_session();
+                printf("[SETTINGS] LiveWP pause%s%s result=%d\n",
+                       reason ? ": " : "", reason ?: "", ok);
+            }
+        }
+    });
+}
+
+static void settings_resume_livewp_after_wake_async(const char *reason)
+{
+    if (!settings_device_supported() || settings_cleanup_in_progress()) return;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if (![d boolForKey:kSettingsLiveWPEnabled] || !g_springboard_rc_ready) return;
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        bool ok = false;
+        @synchronized (settings_rc_lock()) {
+            if (g_springboard_rc_ready && [d boolForKey:kSettingsLiveWPEnabled]) {
+                ok = settings_livewp_should_play() ? livewp_resume_in_session() : livewp_pause_in_session();
+                if (ok) settings_mark_tweak_applied(kSettingsLiveWPEnabled, YES);
+            }
+        }
+        printf("[SETTINGS] LiveWP resume%s%s result=%d\n",
+               reason ? ": " : "", reason ?: "", ok);
+        if (ok) settings_start_livewp_live_loop();
+        settings_notify_package_queue_changed_async();
+    });
+}
+
 static void settings_start_rssi_live_loop(void)
 {
     if (!settings_device_supported()) return;
@@ -3065,7 +3479,8 @@ static void settings_start_themer_live_loop(void)
     if (settings_cleanup_in_progress()) return;
 
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    if (![d boolForKey:kSettingsThemerEnabled]) return;
+    if (![d boolForKey:kSettingsThemerEnabled] &&
+        ![d boolForKey:kSettingsSnowBoardLiteEnabled]) return;
     if (!g_springboard_rc_ready) return;
 
     if (__sync_lock_test_and_set(&g_themer_live_running, 1)) {
@@ -3103,7 +3518,8 @@ static void settings_start_themer_live_loop(void)
                                                    settings_live_interval(kThemerLiveIntervalUS,
                                                                           kThemerLiveBackgroundIntervalUS),
                                                    &g_themer_live_stop_requested);
-            while ([d boolForKey:kSettingsThemerEnabled] &&
+            while (([d boolForKey:kSettingsThemerEnabled] ||
+                    [d boolForKey:kSettingsSnowBoardLiteEnabled]) &&
                    !settings_cleanup_in_progress() &&
                    !g_themer_live_stop_requested &&
                    tick < maxTicks) {
@@ -3132,7 +3548,8 @@ static void settings_start_themer_live_loop(void)
                 failures = ok ? 0 : failures + 1;
 
                 tick++;
-                if (![d boolForKey:kSettingsThemerEnabled] ||
+                if ((![d boolForKey:kSettingsThemerEnabled] &&
+                     ![d boolForKey:kSettingsSnowBoardLiteEnabled]) ||
                     g_themer_live_stop_requested ||
                     tick >= maxTicks) break;
 
@@ -3144,7 +3561,7 @@ static void settings_start_themer_live_loop(void)
         } @finally {
             printf("[SETTINGS] Themer dynamic live loop exited ticks=%lu enabled=%d failures=%lu stop=%d\n",
                    (unsigned long)tick,
-                   [d boolForKey:kSettingsThemerEnabled],
+                   [d boolForKey:kSettingsThemerEnabled] || [d boolForKey:kSettingsSnowBoardLiteEnabled],
                    (unsigned long)failures,
                    g_themer_live_stop_requested);
             __sync_lock_release(&g_themer_live_running);
@@ -3159,7 +3576,8 @@ static void settings_schedule_themer_repair_burst_internal(const char *reason, B
     if (settings_cleanup_in_progress()) return;
 
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    if (![d boolForKey:kSettingsThemerEnabled]) return;
+    if (![d boolForKey:kSettingsThemerEnabled] &&
+        ![d boolForKey:kSettingsSnowBoardLiteEnabled]) return;
     if (!g_springboard_rc_ready) return;
 
     __sync_add_and_fetch(&g_themer_repair_generation, 1);
@@ -3174,7 +3592,8 @@ static void settings_schedule_themer_repair_burst_internal(const char *reason, B
                reason ? ": " : "", reason ?: "");
 
         @try {
-            while ([d boolForKey:kSettingsThemerEnabled] &&
+            while (([d boolForKey:kSettingsThemerEnabled] ||
+                    [d boolForKey:kSettingsSnowBoardLiteEnabled]) &&
                    !settings_cleanup_in_progress() &&
                    !g_themer_live_stop_requested &&
                    tick < 1) {
@@ -3281,8 +3700,12 @@ void settings_application_did_enter_background(void)
         ([d boolForKey:kSettingsAxonLiteEnabled]    && g_springboard_rc_ready) ||
         (settings_rssi_install_allowed() && [d boolForKey:kSettingsRSSIDisplayEnabled] && g_springboard_rc_ready) ||
         ([d boolForKey:kSettingsStatBarEnabled]     && g_springboard_rc_ready) ||
+        ([d boolForKey:kSettingsNSBarEnabled]       && g_springboard_rc_ready) ||
+        ([d boolForKey:kSettingsNiceBarLiteEnabled] && g_springboard_rc_ready) ||
         ([d boolForKey:kSettingsGravityLiteEnabled] && g_springboard_rc_ready) ||
         ([d boolForKey:kSettingsThemerEnabled]      && g_springboard_rc_ready) ||
+        ([d boolForKey:kSettingsSnowBoardLiteEnabled] && g_springboard_rc_ready) ||
+        ([d boolForKey:kSettingsLiveWPEnabled]      && g_springboard_rc_ready) ||
         (settings_typebanner_install_allowed() && [d boolForKey:kSettingsTypeBannerEnabled]);
     if (anyLiveLoopNeeded) {
         if ([d boolForKey:kSettingsKeepAlive]) {
@@ -3302,6 +3725,15 @@ void settings_application_did_enter_background(void)
     if (settings_rssi_install_allowed() && [d boolForKey:kSettingsRSSIDisplayEnabled] && g_springboard_rc_ready) {
         settings_apply_rssi_once_async("entered background");
     }
+    if ([d boolForKey:kSettingsNSBarEnabled] && g_springboard_rc_ready) {
+        settings_apply_nsbar_once_async("entered background");
+    }
+    if ([d boolForKey:kSettingsNiceBarLiteEnabled] && g_springboard_rc_ready) {
+        settings_apply_nicebarlite_once_async("entered background");
+    }
+    if ([d boolForKey:kSettingsLiveWPEnabled] && g_springboard_rc_ready) {
+        settings_pause_livewp_for_sleep_async("entered background");
+    }
     if (![d boolForKey:kSettingsStatBarEnabled] || !g_springboard_rc_ready) {
         return;
     }
@@ -3317,9 +3749,12 @@ void settings_application_will_enter_foreground(void)
     settings_end_statbar_background_task_async("foreground");
     if (settings_cleanup_in_progress()) return;
     settings_apply_statbar_once_async("will enter foreground");
+    settings_apply_nsbar_once_async("will enter foreground");
+    settings_apply_nicebarlite_once_async("will enter foreground");
     settings_apply_rssi_once_async("will enter foreground");
     settings_apply_axonlite_once_async("will enter foreground");
     settings_start_themer_live_loop();
+    settings_resume_livewp_after_wake_async("will enter foreground");
     if (settings_typebanner_install_allowed() &&
         [[NSUserDefaults standardUserDefaults] boolForKey:kSettingsTypeBannerEnabled]) {
         settings_start_typebanner_live_loop();
@@ -3332,9 +3767,12 @@ void settings_application_did_become_active(void)
     g_app_in_background = 0;
     if (settings_cleanup_in_progress()) return;
     settings_apply_statbar_once_async("became active");
+    settings_apply_nsbar_once_async("became active");
+    settings_apply_nicebarlite_once_async("became active");
     settings_apply_rssi_once_async("became active");
     settings_apply_axonlite_once_async("became active");
     settings_start_themer_live_loop();
+    settings_resume_livewp_after_wake_async("became active");
     if (settings_typebanner_install_allowed() &&
         [[NSUserDefaults standardUserDefaults] boolForKey:kSettingsTypeBannerEnabled]) {
         settings_start_typebanner_live_loop();
@@ -3358,6 +3796,36 @@ static BOOL settings_key_is_statbar(NSString *key)
            [key isEqualToString:kSettingsStatBarShowCPU] ||
            [key isEqualToString:kSettingsStatBarShowLabels] ||
            [key isEqualToString:kSettingsStatBarRefreshRateSec];
+}
+
+static BOOL settings_key_is_nsbar(NSString *key)
+{
+    return [key isEqualToString:kSettingsNSBarEnabled] ||
+           [key isEqualToString:kSettingsNSBarPosition];
+}
+
+static BOOL settings_key_is_nicebarlite(NSString *key)
+{
+    if ([key isEqualToString:kSettingsNiceBarLiteEnabled] ||
+        [key isEqualToString:kSettingsNiceBarLiteCelsius] ||
+        [key isEqualToString:kSettingsNiceBarLiteLayoutTopSideInset] ||
+        [key isEqualToString:kSettingsNiceBarLiteLayoutBottomSideInset] ||
+        [key isEqualToString:kSettingsNiceBarLiteLayoutTopY] ||
+        [key isEqualToString:kSettingsNiceBarLiteLayoutBottomY] ||
+        [key isEqualToString:kSettingsNiceBarLiteLayoutCenterX]) {
+        return YES;
+    }
+    for (NSInteger i = 0; i < NiceBarLiteSlotCount; i++) {
+        if ([key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, i)] ||
+            [key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, i)] ||
+            [key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotTextPrefix, i)] ||
+            [key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotTimePrefix, i)] ||
+            [key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotWeatherPrefix, i)] ||
+            [key isEqualToString:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemLanguagePrefix, i)]) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 static BOOL settings_key_is_rssi(NSString *key)
@@ -3653,6 +4121,73 @@ static void settings_schedule_live_apply_for_key(NSString *key)
         return;
     }
 
+    if (settings_key_is_nsbar(key)) {
+        if ([d boolForKey:kSettingsNSBarEnabled] && g_springboard_rc_ready) {
+            settings_apply_nsbar_once_async("live settings");
+        } else if (![d boolForKey:kSettingsNSBarEnabled]) {
+            g_nsbar_live_stop_requested = 1;
+            settings_mark_tweak_applied(kSettingsNSBarEnabled, NO);
+            settings_notify_package_queue_changed_async();
+            if (g_springboard_rc_ready) {
+                dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                    @synchronized (settings_rc_lock()) {
+                        if (g_springboard_rc_ready) nsbar_stop_in_session();
+                    }
+                });
+            }
+        }
+        return;
+    }
+
+    if (settings_key_is_nicebarlite(key)) {
+        if ([d boolForKey:kSettingsNiceBarLiteEnabled] && g_springboard_rc_ready) {
+            settings_apply_nicebarlite_once_async("live settings");
+        } else if (![d boolForKey:kSettingsNiceBarLiteEnabled]) {
+            g_nicebarlite_live_stop_requested = 1;
+            settings_mark_tweak_applied(kSettingsNiceBarLiteEnabled, NO);
+            settings_notify_package_queue_changed_async();
+            if (g_springboard_rc_ready) {
+                dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                    @synchronized (settings_rc_lock()) {
+                        if (g_springboard_rc_ready) nicebarlite_stop_in_session();
+                    }
+                });
+            }
+        }
+        return;
+    }
+
+    if ([key isEqualToString:kSettingsLiveWPEnabled] ||
+        [key isEqualToString:kSettingsLiveWPVideoPath]) {
+        if ([d boolForKey:kSettingsLiveWPEnabled] && g_springboard_rc_ready) {
+            dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                bool ok = false;
+                @synchronized (settings_rc_lock()) {
+                    if (settings_cleanup_in_progress() ||
+                        ![d boolForKey:kSettingsLiveWPEnabled] ||
+                        !g_springboard_rc_ready) return;
+                    ok = livewp_apply_in_session();
+                    settings_mark_tweak_applied(kSettingsLiveWPEnabled, ok);
+                }
+                printf("[SETTINGS] live LiveWP apply result=%d\n", ok);
+                if (ok) settings_start_livewp_live_loop();
+                settings_notify_package_queue_changed_async();
+            });
+        } else if (![d boolForKey:kSettingsLiveWPEnabled]) {
+            g_livewp_live_stop_requested = 1;
+            settings_mark_tweak_applied(kSettingsLiveWPEnabled, NO);
+            settings_notify_package_queue_changed_async();
+            if (g_springboard_rc_ready) {
+                dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                    @synchronized (settings_rc_lock()) {
+                        if (g_springboard_rc_ready) livewp_stop_in_session();
+                    }
+                });
+            }
+        }
+        return;
+    }
+
     if (settings_key_is_gravitylite(key)) {
         if ([d boolForKey:kSettingsGravityLiteEnabled] && g_springboard_rc_ready) {
             dispatch_async(dispatch_get_global_queue(0, 0), ^{
@@ -3896,6 +4431,27 @@ void settings_register_defaults(void)
         kSettingsStatBarShowLabels: @YES,
         kSettingsStatBarRefreshRateSec: @(kStatBarDefaultRefreshRateSec),
 
+        kSettingsNSBarEnabled: @NO,
+        kSettingsNSBarPosition: @(NSBarPositionTopLeft),
+
+        kSettingsNiceBarLiteEnabled: @NO,
+        kSettingsNiceBarLiteCelsius: @YES,
+        kSettingsNiceBarLiteLayoutTopSideInset: @0,
+        kSettingsNiceBarLiteLayoutBottomSideInset: @0,
+        kSettingsNiceBarLiteLayoutTopY: @0,
+        kSettingsNiceBarLiteLayoutBottomY: @0,
+        kSettingsNiceBarLiteLayoutCenterX: @0,
+        settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, NiceBarLiteSlotTopLeft): @(NiceBarLiteContentTimeFormat),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, NiceBarLiteSlotTopRight): @(NiceBarLiteContentSystem),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, NiceBarLiteSlotBottomLeft): @(NiceBarLiteContentSystem),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, NiceBarLiteSlotBottomRight): @(NiceBarLiteContentOff),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, NiceBarLiteSlotBottomCenter): @(NiceBarLiteContentOff),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, NiceBarLiteSlotTopRight): @(NiceBarLiteSystemBatteryPercent),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, NiceBarLiteSlotBottomLeft): @(NiceBarLiteSystemFreeRAM),
+        settings_nicebar_key(kSettingsNiceBarLiteSlotTimePrefix, NiceBarLiteSlotTopLeft): @"HH:mm",
+        settings_nicebar_key(kSettingsNiceBarLiteSlotSystemLanguagePrefix, NiceBarLiteSlotTopRight): @"en",
+        settings_nicebar_key(kSettingsNiceBarLiteSlotSystemLanguagePrefix, NiceBarLiteSlotBottomLeft): @"en",
+
         kSettingsRSSIDisplayEnabled: @NO,
         kSettingsRSSIDisplayWifi:    @YES,
         kSettingsRSSIDisplayCell:    @YES,
@@ -3926,6 +4482,12 @@ void settings_register_defaults(void)
         kSettingsThemerThemeID: kThemerThemeNone,
         kSettingsThemerCustomThemePath: @"",
         kSettingsThemerCustomThemeName: @"",
+
+        kSettingsSnowBoardLiteEnabled: @NO,
+        kSettingsSnowBoardLiteSelectedThemeID: kSnowBoardLiteThemeBuiltinIOS6,
+
+        kSettingsLiveWPEnabled: @NO,
+        kSettingsLiveWPVideoPath: @"",
 
         kSettingsExperimentalTweaksEnabled: @NO,
 
@@ -3993,6 +4555,11 @@ void settings_register_defaults(void)
         [defaults setBool:NO forKey:kSettingsThemerEnabled];
         [defaults synchronize];
     }
+    if ([defaults boolForKey:kSettingsSnowBoardLiteEnabled] &&
+        !settings_snowboardlite_has_selected_theme()) {
+        [defaults setBool:NO forKey:kSettingsSnowBoardLiteEnabled];
+        [defaults synchronize];
+    }
     settings_install_screen_awake_observers();
 }
 
@@ -4029,25 +4596,33 @@ static void settings_run_actions_internal(BOOL pendingOnly)
                                            settings_has_persistent_springboard_remote_call_user();
             BOOL springBoardPendingOnly = pendingOnly && !forceSpringBoardRefresh;
             BOOL statBarEnabled = [d boolForKey:kSettingsStatBarEnabled];
+            BOOL nsBarEnabled = [d boolForKey:kSettingsNSBarEnabled];
+            BOOL niceBarLiteEnabled = [d boolForKey:kSettingsNiceBarLiteEnabled];
             BOOL rssiEnabled = settings_rssi_install_allowed() && [d boolForKey:kSettingsRSSIDisplayEnabled];
             BOOL axonLiteEnabled = [d boolForKey:kSettingsAxonLiteEnabled];
             BOOL typeBannerEnabled = settings_typebanner_install_allowed() && [d boolForKey:kSettingsTypeBannerEnabled];
             BOOL themerEnabled = [d boolForKey:kSettingsThemerEnabled];
+            BOOL snowboardLiteEnabled = [d boolForKey:kSettingsSnowBoardLiteEnabled];
+            BOOL liveWPEnabled = [d boolForKey:kSettingsLiveWPEnabled];
             BOOL layoutExtrasEnabled = [d boolForKey:kSettingsLayoutExtrasEnabled];
             BOOL stageStripEnabled = settings_stagestrip_install_allowed() && [d boolForKey:kSettingsStageStripEnabled];
             BOOL gravityLiteEnabled = [d boolForKey:kSettingsGravityLiteEnabled];
             BOOL runSBC = settings_enabled_tweak_should_run(d, kSettingsSBCEnabled, springBoardPendingOnly);
             BOOL runDarkTweaks = settings_dark_tweaks_should_run(d, springBoardPendingOnly);
             BOOL runStatBar = settings_enabled_tweak_should_run(d, kSettingsStatBarEnabled, springBoardPendingOnly);
+            BOOL runNSBar = settings_enabled_tweak_should_run(d, kSettingsNSBarEnabled, springBoardPendingOnly);
+            BOOL runNiceBarLite = settings_enabled_tweak_should_run(d, kSettingsNiceBarLiteEnabled, springBoardPendingOnly);
             BOOL runRSSI = settings_rssi_install_allowed() && settings_enabled_tweak_should_run(d, kSettingsRSSIDisplayEnabled, springBoardPendingOnly);
             BOOL runAxonLite = settings_enabled_tweak_should_run(d, kSettingsAxonLiteEnabled, springBoardPendingOnly);
             BOOL runTypeBanner = settings_typebanner_install_allowed() && settings_enabled_tweak_should_run(d, kSettingsTypeBannerEnabled, springBoardPendingOnly);
             BOOL runThemer = settings_enabled_tweak_should_run(d, kSettingsThemerEnabled, springBoardPendingOnly);
+            BOOL runSnowBoardLite = settings_enabled_tweak_should_run(d, kSettingsSnowBoardLiteEnabled, springBoardPendingOnly);
+            BOOL runLiveWP = settings_enabled_tweak_should_run(d, kSettingsLiveWPEnabled, springBoardPendingOnly);
             BOOL runLayoutExtras = settings_enabled_tweak_should_run(d, kSettingsLayoutExtrasEnabled, springBoardPendingOnly);
             BOOL runStageStrip = settings_stagestrip_install_allowed() && settings_enabled_tweak_should_run(d, kSettingsStageStripEnabled, springBoardPendingOnly);
             BOOL runGravityLite = settings_enabled_tweak_should_run(d, kSettingsGravityLiteEnabled, springBoardPendingOnly);
             BOOL cleanupDisabledSpringBoardTweaks = settings_disabled_applied_springboard_cleanup_needed(d);
-            BOOL needsSpringBoardWork = runSBC || runDarkTweaks || runStatBar || runRSSI || runAxonLite || runGravityLite || runLayoutExtras || runTypeBanner || runThemer || runStageStrip || cleanupDisabledSpringBoardTweaks;
+            BOOL needsSpringBoardWork = runSBC || runDarkTweaks || runStatBar || runNSBar || runNiceBarLite || runRSSI || runAxonLite || runGravityLite || runLayoutExtras || runTypeBanner || runThemer || runSnowBoardLite || runLiveWP || runStageStrip || cleanupDisabledSpringBoardTweaks;
             BOOL runSandboxEscape = [d boolForKey:kSettingsRunSandboxEscape] && (!pendingOnly || needsSpringBoardWork);
             // TypeBanner prewarms its hidden SpringBoard window during Apply
             // and reuses the open SpringBoard session for text-only updates.
@@ -4063,7 +4638,11 @@ static void settings_run_actions_internal(BOOL pendingOnly)
             if (runDarkTweaks) total++;
             if (runLayoutExtras) total++;
             if (runThemer) total++;
+            if (runSnowBoardLite) total++;
+            if (runLiveWP) total++;
             if (runStatBar) total++;
+            if (runNSBar) total++;
+            if (runNiceBarLite) total++;
             if (runRSSI) total++;
             if (runAxonLite) total++;
             if (runGravityLite) total++;
@@ -4077,12 +4656,16 @@ static void settings_run_actions_internal(BOOL pendingOnly)
             if (runSBC) [enabledTweaks addObject:@"layout"];
             if (runLayoutExtras) [enabledTweaks addObject:@"extras"];
             if (runStatBar) [enabledTweaks addObject:@"statbar"];
+            if (runNSBar) [enabledTweaks addObject:@"nsbar"];
+            if (runNiceBarLite) [enabledTweaks addObject:@"nicebar"];
             if (runRSSI) [enabledTweaks addObject:@"rssi"];
             if (runAxonLite) [enabledTweaks addObject:@"axon"];
             if (runGravityLite) [enabledTweaks addObject:[NSString stringWithFormat:@"gravity(%ld%%)", (long)[d integerForKey:kSettingsGravityLiteMagnitudePct]]];
             if (runPowercuff) [enabledTweaks addObject:[NSString stringWithFormat:@"power(%@)", [d stringForKey:kSettingsPowercuffLevel] ?: @"nominal"]];
             if (runDarkTweaks) [enabledTweaks addObject:@"dark"];
             if (runThemer) [enabledTweaks addObject:@"themer"];
+            if (runSnowBoardLite) [enabledTweaks addObject:@"snowboardlite"];
+            if (runLiveWP) [enabledTweaks addObject:@"livewp"];
             if (runTypeBanner) [enabledTweaks addObject:@"typebanner"];
             if (runStageStrip) [enabledTweaks addObject:@"stagestrip"];
             if (cleanupDisabledSpringBoardTweaks) [enabledTweaks addObject:@"cleanup"];
@@ -4094,9 +4677,13 @@ static void settings_run_actions_internal(BOOL pendingOnly)
 
             if (!hasRunWork) {
                 if (!statBarEnabled) g_statbar_live_stop_requested = 1;
+                if (!nsBarEnabled) g_nsbar_live_stop_requested = 1;
+                if (!niceBarLiteEnabled) g_nicebarlite_live_stop_requested = 1;
                 if (!rssiEnabled) g_rssi_live_stop_requested = 1;
                 if (!axonLiteEnabled) g_axonlite_live_stop_requested = 1;
                 if (!typeBannerEnabled) g_typebanner_live_stop_requested = 1;
+                if (!themerEnabled && !snowboardLiteEnabled) g_themer_live_stop_requested = 1;
+                if (!liveWPEnabled) g_livewp_live_stop_requested = 1;
                 if (!gravityLiteEnabled) settings_request_gravitylite_stop();
                 if (!stageStripEnabled) settings_request_stagestrip_stop();
                 log_user("[DONE] No pending runtime changes to apply.\n");
@@ -4253,6 +4840,21 @@ static void settings_run_actions_internal(BOOL pendingOnly)
                         }
                     }
 
+                    if (runSnowBoardLite) {
+                        settings_progress(&step, total, "Applying SnowBoard Lite theme");
+                        bool ok = settings_apply_snowboardlite_from_defaults_locked(d);
+                        settings_mark_tweak_applied(kSettingsSnowBoardLiteEnabled,
+                                                    ok && [d boolForKey:kSettingsSnowBoardLiteEnabled]);
+                        printf("[SETTINGS] SnowBoard Lite result=%d\n", ok);
+                        log_user("%s SnowBoard Lite %s.\n",
+                                 ok ? "[OK]" : "[WARN]",
+                                 ok ? "theme applied" : "did not apply cleanly");
+                        cyanide_upload_log_milestone(ok ? @"snowboard-lite-applied" : @"snowboard-lite-warning");
+                        if (ok) {
+                            settings_start_themer_live_loop();
+                        }
+                    }
+
                     if (runGravityLite) {
                         settings_progress(&step, total, "Starting Gravity Lite icon physics");
                         log_user("[GRAVITY] Preparing icon physics state...\n");
@@ -4297,6 +4899,30 @@ static void settings_run_actions_internal(BOOL pendingOnly)
                         cyanide_upload_log_milestone(ok ? @"statbar-initial-applied" : @"statbar-initial-failed");
                     }
 
+                    if (runNSBar) {
+                        settings_progress(&step, total, "Starting NSBar network speed overlay");
+                        bool ok = nsbar_apply_in_session((NSBarPosition)[d integerForKey:kSettingsNSBarPosition]);
+                        settings_mark_tweak_applied(kSettingsNSBarEnabled,
+                                                    ok && [d boolForKey:kSettingsNSBarEnabled]);
+                        printf("[SETTINGS] NSBar result=%d\n", ok);
+                        log_user("%s NSBar %s.\n",
+                                 ok ? "[OK]" : "[WARN]",
+                                 ok ? "showing network speed" : "did not start cleanly");
+                        cyanide_upload_log_milestone(ok ? @"nsbar-initial-applied" : @"nsbar-initial-failed");
+                    }
+
+                    if (runNiceBarLite) {
+                        settings_progress(&step, total, "Starting NiceBar Lite labels");
+                        bool ok = settings_apply_nicebarlite_from_defaults_locked(d);
+                        settings_mark_tweak_applied(kSettingsNiceBarLiteEnabled,
+                                                    ok && [d boolForKey:kSettingsNiceBarLiteEnabled]);
+                        printf("[SETTINGS] NiceBar Lite result=%d\n", ok);
+                        log_user("%s NiceBar Lite %s.\n",
+                                 ok ? "[OK]" : "[WARN]",
+                                 ok ? "labels active" : "did not start cleanly");
+                        cyanide_upload_log_milestone(ok ? @"nicebar-lite-initial-applied" : @"nicebar-lite-initial-failed");
+                    }
+
                     if (runRSSI) {
                         settings_progress(&step, total, "Starting RSSI dBm signal overlays");
                         bool ok = rssidisplay_apply_in_session([d boolForKey:kSettingsRSSIDisplayWifi],
@@ -4308,6 +4934,18 @@ static void settings_run_actions_internal(BOOL pendingOnly)
                                  ok ? "[OK]" : "[WARN]",
                                  ok ? "showing live signal strength (dBm)" : "did not start cleanly");
                         cyanide_upload_log_milestone(ok ? @"rssi-initial-applied" : @"rssi-initial-failed");
+                    }
+
+                    if (runLiveWP) {
+                        settings_progress(&step, total, "Starting LiveWP video wallpaper");
+                        bool ok = livewp_apply_in_session();
+                        settings_mark_tweak_applied(kSettingsLiveWPEnabled,
+                                                    ok && [d boolForKey:kSettingsLiveWPEnabled]);
+                        printf("[SETTINGS] LiveWP result=%d\n", ok);
+                        log_user("%s LiveWP %s.\n",
+                                 ok ? "[OK]" : "[WARN]",
+                                 ok ? "video wallpaper active" : "did not start cleanly");
+                        cyanide_upload_log_milestone(ok ? @"livewp-initial-applied" : @"livewp-initial-failed");
                     }
 
                     if (runAxonLite) {
@@ -4356,10 +4994,25 @@ static void settings_run_actions_internal(BOOL pendingOnly)
                 } else if (!statBarEnabled) {
                     g_statbar_live_stop_requested = 1;
                 }
+                if (runNSBar) {
+                    settings_start_nsbar_live_loop();
+                } else if (!nsBarEnabled) {
+                    g_nsbar_live_stop_requested = 1;
+                }
+                if (runNiceBarLite) {
+                    settings_start_nicebarlite_live_loop();
+                } else if (!niceBarLiteEnabled) {
+                    g_nicebarlite_live_stop_requested = 1;
+                }
                 if (runRSSI) {
                     settings_start_rssi_live_loop();
                 } else if (!rssiEnabled) {
                     g_rssi_live_stop_requested = 1;
+                }
+                if (runLiveWP) {
+                    settings_start_livewp_live_loop();
+                } else if (!liveWPEnabled) {
+                    g_livewp_live_stop_requested = 1;
                 }
                 if (runAxonLite) {
                     settings_start_axonlite_live_loop();
@@ -4384,7 +5037,7 @@ static void settings_run_actions_internal(BOOL pendingOnly)
             } else if (!typeBannerEnabled) {
                 g_typebanner_live_stop_requested = 1;
             }
-            if (runStatBar || runRSSI || runAxonLite || runTypeBanner)
+            if (runStatBar || runNSBar || runNiceBarLite || runRSSI || runAxonLite || runTypeBanner || runLiveWP)
                 cyanide_upload_log_milestone(@"live-tweaks-started");
 
             if (!settings_has_persistent_springboard_remote_call_user()) {
@@ -4456,6 +5109,8 @@ typedef NS_ENUM(NSInteger, SettingsSection) {
     SectionOTA,
     SectionSBC,
     SectionStatBar,
+    SectionNSBar,
+    SectionNiceBarLite,
     SectionRSSI,
     SectionAxonLite,
     SectionTypeBanner,
@@ -4465,6 +5120,8 @@ typedef NS_ENUM(NSInteger, SettingsSection) {
     SectionLayoutExtras,
     SectionNanoRegistry,
     SectionThemer,
+    SectionSnowBoardLite,
+    SectionLiveWP,
     SectionLocationSim,
     SectionGravityLite,
     SectionCount,
@@ -4536,6 +5193,7 @@ static NSString *settings_pretty_date_for_iso(NSString *iso)
 @property (nonatomic, assign) NSInteger underlyingSection;
 @property (nonatomic, copy)   NSString *bundleTitle;
 @property (nonatomic, assign) BOOL changelogExpanded;
+@property (nonatomic, copy)   NSString *pendingThemeImportMode;
 @end
 
 // Singleton delegate so MFMailCompose's host VC doesn't need to conform. Lives
@@ -5217,6 +5875,58 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
     ];
 }
 
+- (NSArray<NSDictionary *> *)nsbarRows
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    return @[
+        @{ @"kind": @"info",
+           @"title": @"Position",
+           @"subtitle": settings_nsbar_position_name([d integerForKey:kSettingsNSBarPosition]) },
+        @{ @"kind": @"button",
+           @"title": @"Choose Position…",
+           @"action": @"nsbar-position" },
+    ];
+}
+
+- (NSArray<NSDictionary *> *)nicebarLiteRows
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSMutableArray<NSDictionary *> *rows = [NSMutableArray array];
+    [rows addObject:@{ @"kind": @"toggle",
+                       @"key": kSettingsNiceBarLiteCelsius,
+                       @"title": @"Celsius" }];
+    for (NSInteger i = 0; i < NiceBarLiteSlotCount; i++) {
+        NSInteger kind = [d integerForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, i)];
+        NSString *detail = settings_nicebar_kind_name(kind);
+        if (kind == NiceBarLiteContentSystem) {
+            NSInteger item = [d integerForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, i)];
+            detail = settings_nicebar_system_name(item);
+        } else if (kind == NiceBarLiteContentTimeFormat) {
+            detail = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotTimePrefix, i)] ?: @"HH:mm";
+        } else if (kind == NiceBarLiteContentCustomText) {
+            detail = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotTextPrefix, i)] ?: @"Custom Text";
+        } else if (kind == NiceBarLiteContentWeather) {
+            detail = [d stringForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotWeatherPrefix, i)] ?: @"Weather Text";
+        }
+        [rows addObject:@{ @"kind": @"button",
+                           @"title": [NSString stringWithFormat:@"%@: %@", settings_nicebar_slot_name(i), detail],
+                           @"action": [NSString stringWithFormat:@"nicebar-slot-%ld", (long)i] }];
+    }
+    [rows addObjectsFromArray:@[
+        @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutTopSideInset,
+           @"title": @"Top side inset", @"min": @(-80), @"max": @80, @"step": @1, @"unit": @"pt", @"default": @0 },
+        @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutBottomSideInset,
+           @"title": @"Bottom side inset", @"min": @(-80), @"max": @80, @"step": @1, @"unit": @"pt", @"default": @0 },
+        @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutTopY,
+           @"title": @"Top Y offset", @"min": @(-40), @"max": @80, @"step": @1, @"unit": @"pt", @"default": @0 },
+        @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutBottomY,
+           @"title": @"Bottom Y offset", @"min": @(-40), @"max": @80, @"step": @1, @"unit": @"pt", @"default": @0 },
+        @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutCenterX,
+           @"title": @"Center X offset", @"min": @(-120), @"max": @120, @"step": @1, @"unit": @"pt", @"default": @0 },
+    ]];
+    return rows;
+}
+
 - (NSArray<NSDictionary *> *)rssiRows
 {
     return @[
@@ -5377,6 +6087,49 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
     return rows;
 }
 
+- (NSArray<NSDictionary *> *)snowboardLiteRows
+{
+    BOOL hasSelection = settings_snowboardlite_has_selected_theme();
+    NSString *selected = settings_snowboardlite_selected_theme_display_name();
+    NSMutableArray<NSDictionary *> *rows = [NSMutableArray arrayWithArray:@[
+        @{ @"kind": @"info",
+           @"title": @"Selected Theme",
+           @"subtitle": hasSelection ? selected : @"None selected. Pick or import a theme before running SnowBoard Lite." },
+        @{ @"kind": @"button",
+           @"title": [selected isEqualToString:@"iOS 6 Theme"] ? @"iOS 6 Theme ✓" : @"Use iOS 6 Theme",
+           @"action": @"sbl-select-ios6" },
+        @{ @"kind": @"button",
+           @"title": @"Import SnowBoard Theme Folder…",
+           @"action": @"sbl-import" },
+    ]];
+    if (hasSelection) {
+        [rows addObject:@{ @"kind": @"button",
+                           @"title": @"Clear Selected Theme",
+                           @"action": @"sbl-clear",
+                           @"destructive": @YES }];
+    }
+    return rows;
+}
+
+- (NSArray<NSDictionary *> *)liveWPRows
+{
+    NSMutableArray<NSDictionary *> *rows = [NSMutableArray arrayWithArray:@[
+        @{ @"kind": @"info",
+           @"title": @"Selected Video",
+           @"subtitle": settings_livewp_video_detail() },
+        @{ @"kind": @"button",
+           @"title": @"Choose Video…",
+           @"action": @"livewp-select-video" },
+    ]];
+    if ([[NSUserDefaults standardUserDefaults] stringForKey:kSettingsLiveWPVideoPath].length > 0) {
+        [rows addObject:@{ @"kind": @"button",
+                           @"title": @"Clear Selected Video",
+                           @"action": @"livewp-clear",
+                           @"destructive": @YES }];
+    }
+    return rows;
+}
+
 + (NSArray<NSDictionary<NSString *, NSString *> *> *)settingsSummaryForSection:(NSInteger)section
 {
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
@@ -5403,6 +6156,14 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         [out addObject:@{@"title": @"Show net speed",      @"value": [d boolForKey:kSettingsStatBarShowNet]    ? @"On" : @"Off"}];
         [out addObject:@{@"title": @"Refresh rate",        @"value": [NSString stringWithFormat:@"%lds",
                                                                        (long)[d integerForKey:kSettingsStatBarRefreshRateSec]]}];
+    } else if (section == SectionNSBar) {
+        [out addObject:@{@"title": @"Position", @"value": settings_nsbar_position_name([d integerForKey:kSettingsNSBarPosition])}];
+    } else if (section == SectionNiceBarLite) {
+        for (NSInteger i = 0; i < NiceBarLiteSlotCount; i++) {
+            NSInteger kind = [d integerForKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, i)];
+            [out addObject:@{@"title": settings_nicebar_slot_name(i),
+                             @"value": settings_nicebar_kind_name(kind)}];
+        }
     } else if (section == SectionRSSI) {
         [out addObject:@{@"title": @"WiFi (bar count)", @"value": [d boolForKey:kSettingsRSSIDisplayWifi] ? @"On" : @"Off"}];
         [out addObject:@{@"title": @"Cellular (dBm)",   @"value": [d boolForKey:kSettingsRSSIDisplayCell] ? @"On" : @"Off"}];
@@ -5419,6 +6180,10 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         [out addObject:@{@"title": @"Multi-watch switch", @"value": [@([d integerForKey:kSettingsNanoMinQuickSwitch])   stringValue]}];
     } else if (section == SectionThemer) {
         [out addObject:@{@"title": @"Theme", @"value": settings_themer_selected_theme_display_name()}];
+    } else if (section == SectionSnowBoardLite) {
+        [out addObject:@{@"title": @"Theme", @"value": settings_snowboardlite_selected_theme_display_name()}];
+    } else if (section == SectionLiveWP) {
+        [out addObject:@{@"title": @"Video", @"value": settings_livewp_video_detail()}];
     } else if (section == SectionLocationSim) {
         [out addObject:@{@"title": @"Target", @"value": settings_location_sim_target_summary(d)}];
     } else if (section == SectionGravityLite) {
@@ -5445,11 +6210,15 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         case SectionThemer:  return self.themerRows;
         case SectionPowercuff: return self.powercuffRows;
         case SectionStatBar:   return self.statbarRows;
+        case SectionNSBar:     return self.nsbarRows;
+        case SectionNiceBarLite: return self.nicebarLiteRows;
         case SectionRSSI:      return self.rssiRows;
         case SectionAxonLite:  return self.axonLiteRows;
         case SectionTypeBanner: return self.typebannerRows;
         case SectionGravityLite: return self.gravityLiteRows;
         case SectionLocationSim: return self.locationSimRows;
+        case SectionSnowBoardLite: return self.snowboardLiteRows;
+        case SectionLiveWP: return self.liveWPRows;
         default: return @[];
     }
 }
@@ -5466,6 +6235,8 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         @{ @"title": @"Launch Options",     @"icon": @"bolt.fill",                          @"color": [UIColor systemRedColor],    @"section": @(SectionLaunch) },
         @{ @"title": @"SBCustomizer",       @"icon": @"square.grid.3x3.fill",                @"color": [UIColor systemBlueColor],   @"section": @(SectionSBC) },
         @{ @"title": @"StatBar",            @"icon": @"thermometer.medium",                  @"color": [UIColor systemRedColor],    @"section": @(SectionStatBar) },
+        @{ @"title": @"NSBar",              @"icon": @"network",                             @"color": [UIColor systemBlueColor],   @"section": @(SectionNSBar) },
+        @{ @"title": @"NiceBar Lite",       @"icon": @"textformat.size",                     @"color": [UIColor systemTealColor],   @"section": @(SectionNiceBarLite) },
 #if CYANIDE_PRIVATE_TWEAKS_AVAILABLE
         @{ @"title": @"Signal Display",     @"icon": @"antenna.radiowaves.left.and.right",   @"color": [UIColor systemBlueColor],   @"section": @(SectionRSSI), @"indev": @YES },
 #endif
@@ -5478,6 +6249,8 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         @{ @"title": @"Location Simulator", @"icon": @"location.fill",                       @"color": [UIColor systemGreenColor],  @"section": @(SectionLocationSim), @"experimental": @YES },
 #endif
         @{ @"title": @"Cyanide Themer",     @"icon": @"paintpalette.fill",                   @"color": [UIColor systemPinkColor],   @"section": @(SectionThemer) },
+        @{ @"title": @"SnowBoard Lite",     @"icon": @"square.stack.3d.up.fill",             @"color": [UIColor systemCyanColor],   @"section": @(SectionSnowBoardLite) },
+        @{ @"title": @"LiveWP",             @"icon": @"play.rectangle.fill",                 @"color": [UIColor systemPurpleColor], @"section": @(SectionLiveWP) },
         @{ @"title": @"Powercuff",          @"icon": @"bolt.slash.fill",                     @"color": [UIColor systemOrangeColor], @"section": @(SectionPowercuff) },
         @{ @"title": @"SpringBoard Tweaks", @"icon": @"apps.iphone",                         @"color": [UIColor systemIndigoColor], @"section": @(SectionDarkSwordTweaks) },
         @{ @"title": @"Drag Coefficient",   @"icon": @"dial.medium.fill",                    @"color": [UIColor systemIndigoColor], @"section": @(SectionDragCoefficient) },
@@ -5665,6 +6438,12 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
     if (s == SectionStatBar) {
         return @"Live overlay. When enabled, StatBar keeps a SpringBoard RemoteCall session open. Refresh rate applies when Cyanide is minimized but the screen is still awake; StatBar pauses while the screen is locked or asleep.";
     }
+    if (s == SectionNSBar) {
+        return @"Network speed overlay ported from d1y/cyanide-ios. When enabled, NSBar keeps a SpringBoard RemoteCall session open and refreshes roughly once per second.";
+    }
+    if (s == SectionNiceBarLite) {
+        return @"NiceBar-style label overlay ported from d1y/cyanide-ios. Configure each slot, then Apply Tweaks to start the live SpringBoard refresh loop.";
+    }
     if (s == SectionRSSI) {
         return @"Adds a UILabel as a sibling of each STUI signal view (no new UIWindow), refreshed every second. Cellular shows live RSRP dBm (sign implicit). WiFi shows the bar count (0-4); the wifid XPC dBm path crashed SpringBoard in prior tests.";
     }
@@ -5684,6 +6463,12 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
         return @"Note: Cyanide Themer is still rough around the edges and may be glitchy. It will be iteratively improved to be more stable over time.\n\n"
                @"Pick a theme before running Cyanide Themer.\n\n"
                @"Custom themes can be a folder of PNG files named by bundle ID, such as com.apple.mobilesafari.png, or a binary plist mapping bundle IDs to PNG data. Import copies the theme into Cyanide's Documents/Themes folder. Theme Format Guide includes examples and plist exports.";
+    }
+    if (s == SectionSnowBoardLite) {
+        return @"SnowBoard/IconBundles importer ported from d1y/cyanide-ios. Folder imports are copied into Cyanide's Documents/SnowBoardLite library and applied through the existing icon replacement pipeline.";
+    }
+    if (s == SectionLiveWP) {
+        return @"Video wallpaper ported from d1y/cyanide-ios. Select an MP4, MOV, or M4V; Cyanide copies it into Documents/LiveWP and plays it in SpringBoard while the RemoteCall session stays alive.";
     }
     return nil;
 }
@@ -6054,10 +6839,88 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
             [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeFolder, UTTypePropertyList]];
         picker.delegate = self;
         picker.allowsMultipleSelection = NO;
+        self.pendingThemeImportMode = @"themer";
         [self presentViewController:picker animated:YES completion:nil];
     }]];
     [hint addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:hint animated:YES completion:nil];
+}
+
+- (void)presentSnowBoardLiteImporter
+{
+    UIAlertController *hint = [UIAlertController
+        alertControllerWithTitle:@"Import SnowBoard Theme"
+                         message:@"Choose a theme folder that contains an IconBundles directory. ZIP and DEB archives are also accepted when they contain IconBundles."
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [hint addAction:[UIAlertAction actionWithTitle:@"Continue" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        NSArray<UTType *> *types = @[
+            UTTypeFolder,
+            UTTypeZIP,
+            [UTType typeWithFilenameExtension:@"deb"] ?: UTTypeData,
+        ];
+        UIDocumentPickerViewController *picker =
+            [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types];
+        picker.delegate = self;
+        picker.allowsMultipleSelection = NO;
+        self.pendingThemeImportMode = @"snowboardlite";
+        [self presentViewController:picker animated:YES completion:nil];
+    }]];
+    [hint addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:hint animated:YES completion:nil];
+}
+
+- (void)presentLiveWPVideoPicker
+{
+    UIDocumentPickerViewController *picker =
+        [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeMovie]];
+    picker.delegate = self;
+    picker.allowsMultipleSelection = NO;
+    self.pendingThemeImportMode = @"livewp";
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (BOOL)importLiveWPVideoAtURL:(NSURL *)url error:(NSError **)error
+{
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    if (docs.length == 0) return NO;
+    NSString *liveDir = [docs stringByAppendingPathComponent:@"LiveWP"];
+    NSFileManager *fm = NSFileManager.defaultManager;
+    if (![fm createDirectoryAtPath:liveDir withIntermediateDirectories:YES attributes:nil error:error]) {
+        return NO;
+    }
+
+    NSString *ext = url.pathExtension.length ? url.pathExtension.lowercaseString : @"mov";
+    NSSet<NSString *> *allowed = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v"]];
+    if (![allowed containsObject:ext]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"LiveWP"
+                                         code:1
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Choose an MP4, MOV, or M4V video."}];
+        }
+        return NO;
+    }
+
+    NSString *base = url.URLByDeletingPathExtension.lastPathComponent;
+    if (base.length == 0) base = @"LiveWP";
+    NSCharacterSet *bad = [[NSCharacterSet alphanumericCharacterSet] invertedSet];
+    NSString *safeBase = [[base componentsSeparatedByCharactersInSet:bad] componentsJoinedByString:@"-"];
+    if (safeBase.length == 0) safeBase = @"LiveWP";
+    NSString *fileName = [NSString stringWithFormat:@"%@-%llu.%@",
+                          safeBase,
+                          (unsigned long long)(NSDate.date.timeIntervalSince1970 * 1000.0),
+                          ext];
+    NSString *dest = [liveDir stringByAppendingPathComponent:fileName];
+    if (![fm copyItemAtURL:url toURL:[NSURL fileURLWithPath:dest] error:error]) {
+        return NO;
+    }
+
+    NSString *relative = [@"LiveWP" stringByAppendingPathComponent:fileName];
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    [d setObject:relative forKey:kSettingsLiveWPVideoPath];
+    [d synchronize];
+    log_user("[LIVEWP] Selected video: %s\n", fileName.UTF8String);
+    return YES;
 }
 
 - (BOOL)importThemerFolderAtURL:(NSURL *)url error:(NSError **)error
@@ -6141,6 +7004,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
     (void)controller;
     NSURL *url = urls.firstObject;
     if (!url) return;
+    NSString *mode = self.pendingThemeImportMode ?: @"themer";
+    self.pendingThemeImportMode = nil;
 
     BOOL scoped = [url startAccessingSecurityScopedResource];
     BOOL isDir = NO;
@@ -6148,30 +7013,253 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSError *err = nil;
-        BOOL ok = isDir ? [self importThemerFolderAtURL:url error:&err]
-                        : [self importThemerPlistAtURL:url error:&err];
+        BOOL ok = NO;
+        NSString *successTitle = @"Theme Imported";
+        NSString *successMessage = nil;
+
+        if ([mode isEqualToString:@"livewp"]) {
+            ok = [self importLiveWPVideoAtURL:url error:&err];
+            successTitle = @"Video Selected";
+            successMessage = [NSString stringWithFormat:@"%@ is ready. Toggle LiveWP on and tap Run to apply.",
+                              url.lastPathComponent ?: @"Video"];
+        } else if ([mode isEqualToString:@"snowboardlite"]) {
+            if (isDir) {
+                ok = settings_sbl_import_folder_theme(url, &err);
+            } else {
+                NSString *tmpRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                    [NSString stringWithFormat:@"SnowBoardLite-%@", NSUUID.UUID.UUIDString]];
+                ok = SBLExtractArchiveToDirectory(url, tmpRoot, &err);
+                if (ok) {
+                    NSString *displayName = url.URLByDeletingPathExtension.lastPathComponent ?: @"Imported Theme";
+                    ok = settings_sbl_import_folder_theme_named([NSURL fileURLWithPath:tmpRoot],
+                                                               displayName,
+                                                               @"archive",
+                                                               &err);
+                }
+                [[NSFileManager defaultManager] removeItemAtPath:tmpRoot error:nil];
+            }
+            successTitle = @"SnowBoard Theme Imported";
+            NSString *name = settings_snowboardlite_selected_theme_display_name();
+            successMessage = [NSString stringWithFormat:@"\"%@\" is now selected. Toggle SnowBoard Lite on and tap Run to apply.", name];
+        } else {
+            ok = isDir ? [self importThemerFolderAtURL:url error:&err]
+                       : [self importThemerPlistAtURL:url error:&err];
+            NSString *name = settings_themer_selected_theme_display_name();
+            successMessage = [NSString stringWithFormat:@"\"%@\" is now selected. Toggle Cyanide Themer on and tap Run to apply.", name];
+        }
         if (scoped) [url stopAccessingSecurityScopedResource];
 
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!ok) {
-                NSString *msg = err.localizedDescription ?: @"Choose a folder of bundleID.png files or a binary plist mapping bundle IDs to PNG data.";
-                UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Theme Import Failed"
+                NSString *msg = err.localizedDescription ?: @"The selected item could not be imported.";
+                UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Import Failed"
                                                                              message:msg
                                                                       preferredStyle:UIAlertControllerStyleAlert];
                 [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
                 [self presentViewController:ac animated:YES completion:nil];
                 return;
             }
-            [self reloadThemerSectionAndQueue];
-            NSString *name = settings_themer_selected_theme_display_name();
+            if ([mode isEqualToString:@"snowboardlite"]) {
+                settings_mark_tweak_applied(kSettingsSnowBoardLiteEnabled, NO);
+                settings_notify_package_queue_changed_async();
+                if (self.detailMode && self.underlyingSection == SectionSnowBoardLite) {
+                    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
+                                  withRowAnimation:UITableViewRowAnimationAutomatic];
+                } else {
+                    [self.tableView reloadData];
+                }
+            } else if ([mode isEqualToString:@"livewp"]) {
+                settings_mark_tweak_applied(kSettingsLiveWPEnabled, NO);
+                settings_notify_package_queue_changed_async();
+                if (self.detailMode && self.underlyingSection == SectionLiveWP) {
+                    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
+                                  withRowAnimation:UITableViewRowAnimationAutomatic];
+                } else {
+                    [self.tableView reloadData];
+                }
+                settings_schedule_live_apply_for_key(kSettingsLiveWPVideoPath);
+            } else {
+                [self reloadThemerSectionAndQueue];
+            }
             UIAlertController *ac = [UIAlertController
-                alertControllerWithTitle:@"Theme Imported"
-                                 message:[NSString stringWithFormat:@"\"%@\" is now selected. Toggle Cyanide Themer on and tap Run to apply.", name]
+                alertControllerWithTitle:successTitle
+                                 message:successMessage
                           preferredStyle:UIAlertControllerStyleAlert];
             [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:ac animated:YES completion:nil];
         });
     });
+}
+
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller
+{
+    (void)controller;
+    self.pendingThemeImportMode = nil;
+}
+
+- (void)reloadSectionOrAll:(NSInteger)section
+{
+    if (self.detailMode && self.underlyingSection == section) {
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
+                      withRowAnimation:UITableViewRowAnimationAutomatic];
+    } else {
+        [self.tableView reloadData];
+    }
+}
+
+- (void)presentNSBarPositionPicker
+{
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"NSBar Position"
+                                                                 message:nil
+                                                          preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray<NSNumber *> *positions = @[
+        @(NSBarPositionTopLeft),
+        @(NSBarPositionBottomLeft),
+        @(NSBarPositionTopRight),
+        @(NSBarPositionBottomRight),
+        @(NSBarPositionCenter),
+    ];
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    for (NSNumber *number in positions) {
+        NSInteger pos = number.integerValue;
+        NSString *title = settings_nsbar_position_name(pos);
+        if (pos == [d integerForKey:kSettingsNSBarPosition]) {
+            title = [title stringByAppendingString:@" ✓"];
+        }
+        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+            [d setInteger:pos forKey:kSettingsNSBarPosition];
+            [d synchronize];
+            settings_schedule_live_apply_for_key(kSettingsNSBarPosition);
+            [self reloadSectionOrAll:SectionNSBar];
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    settings_present_controller(ac, self);
+}
+
+- (void)presentNiceBarTextPromptForSlot:(NSInteger)slot
+                                   key:(NSString *)key
+                                  kind:(NiceBarLiteContentKind)kind
+                                 title:(NSString *)title
+                           placeholder:(NSString *)placeholder
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:title
+                                                                 message:nil
+                                                          preferredStyle:UIAlertControllerStyleAlert];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = placeholder;
+        field.text = [d stringForKey:key] ?: @"";
+        field.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        NSString *value = ac.textFields.firstObject.text ?: @"";
+        [d setObject:value forKey:key];
+        [d setInteger:kind forKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, slot)];
+        [d synchronize];
+        settings_schedule_live_apply_for_key(key);
+        [self reloadSectionOrAll:SectionNiceBarLite];
+    }]];
+    settings_present_controller(ac, self);
+}
+
+- (void)presentNiceBarSystemPickerForSlot:(NSInteger)slot
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:settings_nicebar_slot_name(slot)
+                                                                 message:@"Choose a system value"
+                                                          preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSInteger item = NiceBarLiteSystemBatteryTemp; item <= NiceBarLiteSystemLast; item++) {
+        [ac addAction:[UIAlertAction actionWithTitle:settings_nicebar_system_name(item)
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *_) {
+            [d setInteger:NiceBarLiteContentSystem forKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, slot)];
+            [d setInteger:item forKey:settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, slot)];
+            [d synchronize];
+            settings_schedule_live_apply_for_key(settings_nicebar_key(kSettingsNiceBarLiteSlotSystemPrefix, slot));
+            [self reloadSectionOrAll:SectionNiceBarLite];
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    settings_present_controller(ac, self);
+}
+
+- (void)presentNiceBarSlotEditor:(NSInteger)slot
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:settings_nicebar_slot_name(slot)
+                                                                 message:nil
+                                                          preferredStyle:UIAlertControllerStyleActionSheet];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Off" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        [d setInteger:NiceBarLiteContentOff forKey:settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, slot)];
+        [d synchronize];
+        settings_schedule_live_apply_for_key(settings_nicebar_key(kSettingsNiceBarLiteSlotKindPrefix, slot));
+        [self reloadSectionOrAll:SectionNiceBarLite];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"System Value…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        [self presentNiceBarSystemPickerForSlot:slot];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Date / Time Format…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        [self presentNiceBarTextPromptForSlot:slot
+                                          key:settings_nicebar_key(kSettingsNiceBarLiteSlotTimePrefix, slot)
+                                         kind:NiceBarLiteContentTimeFormat
+                                        title:@"Date / Time Format"
+                                  placeholder:@"HH:mm"];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Custom Text…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        [self presentNiceBarTextPromptForSlot:slot
+                                          key:settings_nicebar_key(kSettingsNiceBarLiteSlotTextPrefix, slot)
+                                         kind:NiceBarLiteContentCustomText
+                                        title:@"Custom Text"
+                                  placeholder:@"Cyanide"];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Weather Text…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *_) {
+        [self presentNiceBarTextPromptForSlot:slot
+                                          key:settings_nicebar_key(kSettingsNiceBarLiteSlotWeatherPrefix, slot)
+                                         kind:NiceBarLiteContentWeather
+                                        title:@"Weather Text"
+                                  placeholder:@"72° Sunny"];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    settings_present_controller(ac, self);
+}
+
+- (void)selectSnowBoardLiteIOS6Theme
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    [d setObject:kSnowBoardLiteThemeBuiltinIOS6 forKey:kSettingsSnowBoardLiteSelectedThemeID];
+    [d synchronize];
+    settings_mark_tweak_applied(kSettingsSnowBoardLiteEnabled, NO);
+    settings_notify_package_queue_changed_async();
+    [self reloadSectionOrAll:SectionSnowBoardLite];
+}
+
+- (void)clearSnowBoardLiteTheme
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    [d setObject:@"" forKey:kSettingsSnowBoardLiteSelectedThemeID];
+    if ([d boolForKey:kSettingsSnowBoardLiteEnabled]) {
+        [d setBool:NO forKey:kSettingsSnowBoardLiteEnabled];
+        g_themer_live_stop_requested = 1;
+    }
+    [d synchronize];
+    settings_mark_tweak_applied(kSettingsSnowBoardLiteEnabled, NO);
+    settings_notify_package_queue_changed_async();
+    [self reloadSectionOrAll:SectionSnowBoardLite];
+}
+
+- (void)clearLiveWPVideo
+{
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    [d setObject:@"" forKey:kSettingsLiveWPVideoPath];
+    if ([d boolForKey:kSettingsLiveWPEnabled]) {
+        [d setBool:NO forKey:kSettingsLiveWPEnabled];
+        g_livewp_live_stop_requested = 1;
+    }
+    [d synchronize];
+    settings_schedule_live_apply_for_key(kSettingsLiveWPEnabled);
+    [self reloadSectionOrAll:SectionLiveWP];
 }
 
 // "Classic" alternate icon is registered in Info.plist with CFBundleIconFiles
@@ -8287,6 +9375,52 @@ void cyanide_present_contact(UIViewController *host)
                     });
                 }
             });
+        }
+        return;
+    }
+
+    if (indexPath.section == SectionNSBar) {
+        NSDictionary *row = [self rowsForSection:indexPath.section][indexPath.row];
+        if ([row[@"action"] isEqualToString:@"nsbar-position"]) {
+            [self presentNSBarPositionPicker];
+        }
+        return;
+    }
+
+    if (indexPath.section == SectionNiceBarLite) {
+        NSDictionary *row = [self rowsForSection:indexPath.section][indexPath.row];
+        NSString *action = row[@"action"];
+        if ([action hasPrefix:@"nicebar-slot-"]) {
+            NSInteger slot = [[action substringFromIndex:[@"nicebar-slot-" length]] integerValue];
+            if (slot >= 0 && slot < NiceBarLiteSlotCount) {
+                [self presentNiceBarSlotEditor:slot];
+            }
+        }
+        return;
+    }
+
+    if (indexPath.section == SectionSnowBoardLite) {
+        NSDictionary *row = [self rowsForSection:indexPath.section][indexPath.row];
+        if (![row[@"kind"] isEqualToString:@"button"]) return;
+        NSString *action = row[@"action"];
+        if ([action isEqualToString:@"sbl-select-ios6"]) {
+            [self selectSnowBoardLiteIOS6Theme];
+        } else if ([action isEqualToString:@"sbl-import"]) {
+            [self presentSnowBoardLiteImporter];
+        } else if ([action isEqualToString:@"sbl-clear"]) {
+            [self clearSnowBoardLiteTheme];
+        }
+        return;
+    }
+
+    if (indexPath.section == SectionLiveWP) {
+        NSDictionary *row = [self rowsForSection:indexPath.section][indexPath.row];
+        if (![row[@"kind"] isEqualToString:@"button"]) return;
+        NSString *action = row[@"action"];
+        if ([action isEqualToString:@"livewp-select-video"]) {
+            [self presentLiveWPVideoPicker];
+        } else if ([action isEqualToString:@"livewp-clear"]) {
+            [self clearLiveWPVideo];
         }
         return;
     }

@@ -16,9 +16,14 @@ Avoid vague bullets like "Update settings", "Change project files", or
 
 ## Pending
 
-- [ ] Allowed public Cyanide checkouts to build without the private experimental tweak submodule.
 
 ## Released
+
+### v1.2.5 - 2026-06-05
+
+- [x] Replaced the first-launch log collection notice with a Cyanide Signal group invite for feedback, feature requests, and support.
+- [x] Added NSBar, NiceBar Lite, SnowBoard Lite, and LiveWP ports from d1y/cyanide-ios, with Settings controls and Installer package credits.
+- [x] Allowed public Cyanide checkouts to build without the private experimental tweak submodule.
 
 ### v1.2.4 - 2026-06-03
 

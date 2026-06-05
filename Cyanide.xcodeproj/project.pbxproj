@@ -545,7 +545,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1002004;
+				CURRENT_PROJECT_VERSION = 1002005;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 7LGY4NE2VM;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -573,7 +573,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/resident/output",
 				);
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				OTHER_CFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide1";
 				PRODUCT_NAME = Cyanide;
@@ -595,7 +595,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1002004;
+				CURRENT_PROJECT_VERSION = 1002005;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 7LGY4NE2VM;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -623,7 +623,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/resident/output",
 				);
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				OTHER_CFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide1";
 				PRODUCT_NAME = Cyanide;

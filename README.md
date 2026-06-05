@@ -41,6 +41,13 @@ SpringBoard and related daemons to break things on other releases.
 
 - **StatBar**: battery temperature and free-RAM overlay anchored to the
   SpringBoard status bar, with optional C/F and network-speed display.
+- **NSBar**: compact live download/upload speed overlay for the status bar,
+  with selectable corner/center positions. Ported from
+  [`d1y/cyanide-ios`](https://github.com/d1y/cyanide-ios).
+- **NiceBar Lite**: configurable status-bar-adjacent labels for custom text,
+  date/time formats, battery, memory, traffic, uptime, IP address, disk,
+  thermal state, and other live readouts. Ported from
+  [`d1y/cyanide-ios`](https://github.com/d1y/cyanide-ios).
 
 ### Home Screen Layout
 
@@ -84,6 +91,14 @@ Ported from [`kolbicz/DarkSword-Tweaks`](https://github.com/kolbicz/DarkSword-Tw
   SBIconView hierarchy and swaps each icon's image with a PNG matched on bundle
   ID. Ships with iOS 6 Theme; also accepts a custom folder of `<bundleID>.png`
   files or a binary plist. Pick a theme in Settings before running.
+- **SnowBoard Lite**: imports SnowBoard/IconBundles-style theme folders or
+  archives into Cyanide's local theme library, then applies the selected theme
+  through the existing icon replacement pipeline. Ported from
+  [`d1y/cyanide-ios`](https://github.com/d1y/cyanide-ios).
+- **LiveWP**: copies a selected MP4/MOV/M4V into Cyanide's app container and
+  plays it behind SpringBoard's home and lock screen windows while the live
+  RemoteCall session is active. Ported from
+  [`d1y/cyanide-ios`](https://github.com/d1y/cyanide-ios).
 - **Watch Pairing Override**: edits the watchOS pairing range stored on the
   iPhone so you can pair a newer Apple Watch or revive an older one. Persists
   across reboots; respring before pairing.
@@ -171,6 +186,9 @@ iOS/iPadOS 18.7.2 and 26.1. Later builds are outside this kernel exploit window.
   Disable Call Recording concept.
 - [`rpetrich`](https://github.com/rpetrich): Powercuff.
 - [Julio Verne](https://github.com/julioverne): the original [Gravity](https://github.com/julioverne/Gravity) tweak that Gravity Lite is a core port of.
+- [`d1y`](https://github.com/d1y): [`cyanide-ios`](https://github.com/d1y/cyanide-ios)
+  AGPL-3.0 sources used for the NSBar, NiceBar Lite, SnowBoard Lite, and
+  LiveWP ports.
 - [`tomt000`](https://github.com/tomt000): [Dynamic Stage](https://havoc.app/package/dynamicstage) — the original Stage Manager-for-iPhone tweak whose split-view + scene-hosting design Dynamic Stage Lite re-implements over RemoteCall.
 
 ### UI inspiration
@@ -208,6 +226,10 @@ xcodebuild \
 The open-source portion of this repository — everything outside the
 `Cyanide/tweaks/private/` submodule — is licensed under **AGPL-3.0**.
 See `LICENSE`.
+
+The NSBar, NiceBar Lite, SnowBoard Lite, and LiveWP ports adapt AGPL-3.0 code
+from [`d1y/cyanide-ios`](https://github.com/d1y/cyanide-ios) and remain in the
+AGPL-covered public tree.
 
 The `Cyanide/tweaks/private/` submodule points at a separate private
 repository containing the closed-source experimental tweak

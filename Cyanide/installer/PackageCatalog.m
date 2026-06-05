@@ -15,14 +15,18 @@
 // detail-mode SettingsViewController push).
 static const NSInteger kSecSBC              = 4;
 static const NSInteger kSecStatBar          = 5;
-static const NSInteger kSecRSSI             = 6;
-static const NSInteger kSecPowercuff        = 9;
-static const NSInteger kSecDragCoefficient  = 11;
-static const NSInteger kSecLayoutExtras     = 12;
-static const NSInteger kSecNanoRegistry     = 13;
-static const NSInteger kSecThemer           = 14;
-static const NSInteger kSecLocationSim      = 15;
-static const NSInteger kSecGravityLite      = 16;
+static const NSInteger kSecNSBar            = 6;
+static const NSInteger kSecNiceBarLite      = 7;
+static const NSInteger kSecRSSI             = 8;
+static const NSInteger kSecPowercuff        = 11;
+static const NSInteger kSecDragCoefficient  = 13;
+static const NSInteger kSecLayoutExtras     = 14;
+static const NSInteger kSecNanoRegistry     = 15;
+static const NSInteger kSecThemer           = 16;
+static const NSInteger kSecSnowBoardLite    = 17;
+static const NSInteger kSecLiveWP           = 18;
+static const NSInteger kSecLocationSim      = 19;
+static const NSInteger kSecGravityLite      = 20;
 
 + (NSArray<Package *> *)allPackages
 {
@@ -61,6 +65,32 @@ static const NSInteger kSecGravityLite      = 16;
                                      enabledKey:kSettingsStatBarEnabled
                                           isNew:NO];
         statBar.settingsSection = kSecStatBar;
+
+        Package *nsBar = [[Package alloc] initWithIdentifier:@"com.darksword.nsbar"
+                                           name:@"NSBar"
+                               shortDescription:@"Network speed overlay in the status bar"
+                                longDescription:@"Displays real-time download and upload speed in a compact SpringBoard status-bar overlay. Pick its corner or center position in Settings.\n\nPorted from d1y/cyanide-ios."
+                                        version:version
+                                         author:@"d1y"
+                                       category:@"Status Bar"
+                                     symbolName:@"network"
+                                           kind:PackageInstallKindToggle
+                                     enabledKey:kSettingsNSBarEnabled
+                                          isNew:YES];
+        nsBar.settingsSection = kSecNSBar;
+
+        Package *niceBarLite = [[Package alloc] initWithIdentifier:@"com.darksword.nicebarlite"
+                                           name:@"NiceBar Lite"
+                               shortDescription:@"NiceBar-style status labels"
+                                longDescription:@"Adds configurable text labels around the status bar. Slots can show custom text, date/time formats, and system values such as battery, memory, network speed, uptime, IP address, disk space, thermal state, and traffic counters.\n\nPorted from d1y/cyanide-ios."
+                                        version:version
+                                         author:@"d1y"
+                                       category:@"Status Bar"
+                                     symbolName:@"textformat.size"
+                                           kind:PackageInstallKindToggle
+                                     enabledKey:kSettingsNiceBarLiteEnabled
+                                          isNew:YES];
+        niceBarLite.settingsSection = kSecNiceBarLite;
 
 #if CYANIDE_PRIVATE_TWEAKS_AVAILABLE
         Package *signal = [[Package alloc] initWithIdentifier:@"com.darksword.rssidisplay"
@@ -193,6 +223,33 @@ static const NSInteger kSecGravityLite      = 16;
         themer.settingsSection = kSecThemer;
         themer.unstableWarning = @"⚠️ Beta: icon theming works but RemoteCall-backed changes may need re-applying after a respring or SpringBoard restart. Pick a theme in Settings > Cyanide Themer before running.";
 
+        Package *snowboardLite = [[Package alloc] initWithIdentifier:@"com.darksword.snowboardlite"
+                                           name:@"SnowBoard Lite"
+                               shortDescription:@"Local SnowBoard-style icon themes"
+                                longDescription:@"Imports SnowBoard/IconBundles themes into a local library and applies the selected theme through Cyanide's icon replacement pipeline. Supports the bundled iOS 6 theme and local folder imports.\n\nPorted from d1y/cyanide-ios."
+                                        version:version
+                                         author:@"d1y"
+                                       category:@"Beta"
+                                     symbolName:@"square.stack.3d.up.fill"
+                                          kind:PackageInstallKindToggle
+                                     enabledKey:kSettingsSnowBoardLiteEnabled
+                                          isNew:YES];
+        snowboardLite.settingsSection = kSecSnowBoardLite;
+        snowboardLite.unstableWarning = @"Preview: import or select a SnowBoard Lite theme before applying.";
+
+        Package *liveWP = [[Package alloc] initWithIdentifier:@"com.darksword.livewp"
+                                           name:@"LiveWP"
+                               shortDescription:@"Video wallpaper for Home and Lock Screen"
+                                longDescription:@"Plays a selected MP4/MOV/M4V video behind SpringBoard's home and lock screen windows while Cyanide keeps the RemoteCall session alive.\n\nPorted from d1y/cyanide-ios."
+                                        version:version
+                                         author:@"d1y"
+                                       category:@"Beta"
+                                     symbolName:@"play.rectangle.fill"
+                                           kind:PackageInstallKindToggle
+                                     enabledKey:kSettingsLiveWPEnabled
+                                          isNew:YES];
+        liveWP.settingsSection = kSecLiveWP;
+
         Package *layoutExtras = [[Package alloc] initWithIdentifier:@"com.darksword.layoutextras"
                                            name:@"Home Layout Extras"
                                shortDescription:@"Extra home/dock padding and per-icon scaling"
@@ -289,6 +346,8 @@ static const NSInteger kSecGravityLite      = 16;
 
         list = @[
             statBar,
+            nsBar,
+            niceBarLite,
             sbc,
             layoutExtras,
             gravityLite,
@@ -378,6 +437,8 @@ static const NSInteger kSecGravityLite      = 16;
             locationSim,
 #endif
             themer,
+            snowboardLite,
+            liveWP,
         ];
     });
     return list;
@@ -391,6 +452,7 @@ static const NSInteger kSecGravityLite      = 16;
         @"Beta",
         @"Status Bar",
         @"Home Screen Layout",
+        @"Other Tweaks",
         @"Performance",
         @"System Updates",
         @"System",
