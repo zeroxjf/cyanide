@@ -32,6 +32,29 @@ omit it.
 
 ## Released
 
+### v1.2.25 - 2026-06-17
+
+- [x] Fixed a hang and SpringBoard crash when applying layout, icon, or theme tweaks that read the SpringBoard view hierarchy.
+- [x] Blocked Apply Tweaks inside LiveContainer with a clear warning to use a normal sideloaded install instead.
+- [x] Improved StatBar on iPad by sizing the overlay from the active scene and slowing the minimum live refresh rate to reduce RemoteCall pressure.
+- [x] Improved M-series iPad tweak startup by preserving valid `0xfffffe...` kernel pointers during RemoteCall setup.
+- [x] Added clearer RemoteCall failure diagnostics for iPad tweak-startup reports.
+- [x] Improved M-series iPad RemoteCall startup by retrying IPC port lookup with an alternate table decode when the first path returns no port object.
+- [x] Improved tweak startup on devices that could report `SpringBoard proc=0` by falling back to userland PID lookup before the kernel proc walk.
+- [x] Improved SnowBoard Lite folder icon theming by refreshing closed folder previews after theme model updates.
+- [x] Improved SnowBoard Lite custom theme applies by bounding large theme packs and their installed-icon prefilter work, skipping expensive large-theme visible scans, skipping non-installed icon uploads, warning when no icons match, immediately repainting small/one-icon themes, and allowing model-only icon updates when Home Screen icon views are not visible.
+- [x] Improved SBCustomizer and Home Layout Extras refresh on Home Screen pages that include widgets, including root-folder pages that are not reached by the visible-window list walk.
+- [x] Reduced delayed SnowBoard Lite/Themer resprings by stopping the continuous live icon repaint loop after the initial repair pass.
+- [x] Improved last-chance cleanup when closing Cyanide during an active Apply run by waiting longer for the run to finish before teardown is skipped.
+- [x] Restored Darksword double-tap-to-lock on the lock screen after waking the device.
+- [x] Improved Dynamic Stage Lite by hardening picker command and screen-state handling, hiding Camera from the app picker, and reducing the visible frame around hosted apps.
+- [x] Fixed Dynamic Stage Lite selected app windows appearing blank by using SpringBoard scene views before raw scene-layer hosts.
+- [x] Kept Cyanide session logs open for live tweak interactions so Dynamic Stage picker events are captured after install completes.
+- [x] Added vphone 26.1 kernel-read support so Cyanide can use the jailbroken virtual kernel state for RemoteCall tweak debugging.
+- [x] Improved vphone kernel-read startup by falling back from an unusable libkrw backend to direct tfp0 discovery.
+- [x] Limited vphone RemoteCall debugging support to iOS 26.1-26.5 so unsupported virtual kernel layouts are rejected clearly.
+- [x] FastLockX Lite now defaults to a 0.3s retry interval for a faster pickup-to-unlock pulse.
+
 ### v1.2.24 - 2026-06-13
 
 - [x] Reverted FastLockX Lite back to its original release behavior; we do not recommend installing it with other persistent RemoteCall tweaks for now.

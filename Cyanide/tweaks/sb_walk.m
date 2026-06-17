@@ -15,8 +15,8 @@ static uint64_t sw_safe_msg(uint64_t obj, const char *selname,
     uint64_t sel = r_sel(selname);
     uint64_t rs  = r_sel("respondsToSelector:");
     if (!sel || !rs) return 0;
-    if (!r_msg_main(obj, rs, sel, 0, 0, 0)) return 0;
-    return r_msg_main(obj, sel, a, b, c, d);
+    if (!r_msg(obj, rs, sel, 0, 0, 0)) return 0;
+    return r_msg(obj, sel, a, b, c, d);
 }
 
 int sb_collect_views(uint64_t root, uint64_t klass, uint64_t *out, int cap)
@@ -35,16 +35,16 @@ int sb_collect_views(uint64_t root, uint64_t klass, uint64_t *out, int cap)
         uint64_t v = q[head++];
         visited++;
         if (!v) continue;
-        if (r_msg_main(v, selKind, klass, 0, 0, 0)) {
+        if (r_msg(v, selKind, klass, 0, 0, 0)) {
             if (found < cap) out[found++] = v;
             continue;
         }
-        uint64_t subs = r_msg_main(v, selSub, 0, 0, 0, 0);
+        uint64_t subs = r_msg(v, selSub, 0, 0, 0, 0);
         if (!subs) continue;
-        uint64_t cn = r_msg_main(subs, selCnt, 0, 0, 0, 0);
+        uint64_t cn = r_msg(subs, selCnt, 0, 0, 0, 0);
         if (cn > 256) cn = 256;
         for (uint64_t i = 0; i < cn && tail < QMAX; i++) {
-            uint64_t c = r_msg_main(subs, selObj, i, 0, 0, 0);
+            uint64_t c = r_msg(subs, selObj, i, 0, 0, 0);
             if (c) q[tail++] = c;
         }
     }
@@ -61,10 +61,10 @@ int sb_collect_views_in_windows(uint64_t klass, uint64_t *out, int cap)
     int n = 0;
     uint64_t wins = sw_safe_msg(app, "windows", 0, 0, 0, 0);
     if (wins) {
-        uint64_t wc = r_msg_main(wins, r_sel("count"), 0, 0, 0, 0);
+        uint64_t wc = r_msg(wins, r_sel("count"), 0, 0, 0, 0);
         if (wc > 32) wc = 32;
         for (uint64_t i = 0; i < wc && n < cap; i++) {
-            uint64_t w = r_msg_main(wins, r_sel("objectAtIndex:"), i, 0, 0, 0);
+            uint64_t w = r_msg(wins, r_sel("objectAtIndex:"), i, 0, 0, 0);
             if (w) n += sb_collect_views(w, klass, out + n, cap - n);
         }
     }

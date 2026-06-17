@@ -77,6 +77,7 @@ bool remote_call_has_local_state(void);
 bool remote_call_current_success(void);
 int remote_call_current_pid(void);
 int remote_call_set_stable_timeout_floor_ms(int timeoutMS);
+bool remote_call_vphone_springboard_bridge_available(void);
 RemoteCallInitFailure remote_call_last_init_failure(void);
 uint32_t remote_call_last_init_failure_pid(void);
 const char *remote_call_init_failure_description(RemoteCallInitFailure failure);

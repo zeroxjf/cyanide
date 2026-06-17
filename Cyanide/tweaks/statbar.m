@@ -6,6 +6,7 @@
 #import "remote_objc.h"
 #import "../TaskRop/RemoteCall.h"
 #import "../LogTextView.h"
+#import "../cyanide-vphone/vphone_krw.h"
 
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -151,6 +152,12 @@ static double read_battery_temp_c(void)
     }
 
     lastRemoteRead = now;
+    if (g_vphone_mode) {
+        if (statbar_should_log_tick())
+            printf("[STATBAR] remote IOKit temp skipped on vphone\n");
+        return cachedTempC;
+    }
+
     if (statbar_should_log_tick())
         printf("[STATBAR] temp source: throttled SpringBoard IOKit\n");
     double tempC = read_battery_temp_c_remote();
@@ -360,6 +367,7 @@ typedef struct {
     double screenWidth;
     double screenHeight;
     double topAreaHeight;
+    int source;
 } StatBarLayoutMetrics;
 
 static const uint64_t kStatBarOverlayTag = 99421;
@@ -544,40 +552,74 @@ static uint64_t statbar_read_springboard_interface_orientation(uint64_t win)
     return r_msg2_main(scene, "interfaceOrientation", 0, 0, 0, 0);
 }
 
+static bool statbar_read_scene_coordinate_bounds(uint64_t win, double *widthOut, double *heightOut)
+{
+    if (!r_is_objc_ptr(win) || !widthOut || !heightOut) return false;
+
+    uint64_t scene = r_msg2_main(win, "windowScene", 0, 0, 0, 0);
+    if (!r_is_objc_ptr(scene)) return false;
+
+    uint64_t coordinateSpace = r_msg2_main(scene, "coordinateSpace", 0, 0, 0, 0);
+    if (!r_is_objc_ptr(coordinateSpace)) return false;
+
+    RCGRect64 bounds = {0};
+    if (!r_msg2_main_struct_ret(coordinateSpace, "bounds",
+                                &bounds, sizeof(bounds),
+                                NULL, 0, NULL, 0, NULL, 0, NULL, 0)) {
+        return false;
+    }
+
+    double w = fabs(bounds.width);
+    double h = fabs(bounds.height);
+    if (!statbar_valid_screen_length(w) || !statbar_valid_screen_length(h)) return false;
+
+    *widthOut = w;
+    *heightOut = h;
+    return true;
+}
+
 static StatBarLayoutMetrics statbar_read_layout_metrics(uint64_t win)
 {
-    StatBarLayoutMetrics m = { kStatBarFallbackScreenWidth, 0.0, 0.0 };
+    StatBarLayoutMetrics m = { kStatBarFallbackScreenWidth, 0.0, 0.0, 0 };
 
     CGRect bounds = UIScreen.mainScreen.bounds;
     double w = bounds.size.width;
     double h = bounds.size.height;
-    bool readRemoteBounds = false;
+    bool readSceneBounds = false;
 
-    if (r_is_objc_ptr(win)) {
+    if (statbar_read_scene_coordinate_bounds(win, &w, &h)) {
+        readSceneBounds = true;
+        m.source = 1;
+    } else if (r_is_objc_ptr(win)) {
         RCGRect64 remoteBounds = {0};
         if (r_msg2_main_struct_ret(win, "bounds",
                                    &remoteBounds, sizeof(remoteBounds),
                                    NULL, 0, NULL, 0, NULL, 0, NULL, 0)) {
             double rw = fabs(remoteBounds.width);
             double rh = fabs(remoteBounds.height);
-            if (statbar_valid_screen_length(rw) && statbar_valid_screen_length(rh)) {
+            if (statbar_valid_screen_length(rw) &&
+                statbar_valid_screen_length(rh) &&
+                rw > 200.0 &&
+                rh > 200.0) {
                 w = rw;
                 h = rh;
-                readRemoteBounds = true;
+                readSceneBounds = true;
+                m.source = 2;
             }
         }
     }
 
     uint64_t orientation = 0;
     bool landscape = false;
-    if (!readRemoteBounds) {
+    if (!readSceneBounds) {
         orientation = r_is_objc_ptr(win)
             ? statbar_read_springboard_interface_orientation(win) : 0;
         landscape = (orientation == 3 || orientation == 4);
     }
-    if (!readRemoteBounds && landscape) {
+    if (!readSceneBounds && landscape) {
         w = fmax(bounds.size.width, bounds.size.height);
         h = fmin(bounds.size.width, bounds.size.height);
+        m.source = 3;
     }
 
     if (statbar_valid_screen_length(w)) m.screenWidth = w;
@@ -603,16 +645,27 @@ static uint64_t statbar_nsstring_utf8_fast(const char *cstr)
 {
     if (!cstr) cstr = "n/a";
     uint64_t buf = r_alloc_str(cstr);
-    if (!buf) return 0;
+    if (!buf) {
+        if (statbar_should_log_tick())
+            printf("[STATBAR] overlay: NSString source buffer alloc/write failed\n");
+        return 0;
+    }
     if (!gStatBarNSStringClass) gStatBarNSStringClass = r_class("NSString");
     if (!gStatBarAllocSel) gStatBarAllocSel = r_sel("alloc");
     if (!gStatBarInitUTF8Sel) gStatBarInitUTF8Sel = r_sel("initWithUTF8String:");
     if (!r_is_objc_ptr(gStatBarNSStringClass) || !gStatBarAllocSel || !gStatBarInitUTF8Sel) {
+        if (statbar_should_log_tick())
+            printf("[STATBAR] overlay: NSString lookup failed class=0x%llx alloc=0x%llx initUTF8=0x%llx\n",
+                   gStatBarNSStringClass, gStatBarAllocSel, gStatBarInitUTF8Sel);
         r_free(buf);
         return 0;
     }
-    uint64_t allocated = r_msg(gStatBarNSStringClass, gStatBarAllocSel, 0, 0, 0, 0);
-    uint64_t ns = r_is_objc_ptr(allocated) ? r_msg(allocated, gStatBarInitUTF8Sel, buf, 0, 0, 0) : 0;
+    uint64_t allocated = r_msg_main(gStatBarNSStringClass, gStatBarAllocSel, 0, 0, 0, 0);
+    uint64_t ns = r_is_objc_ptr(allocated) ? r_msg_main(allocated, gStatBarInitUTF8Sel, buf, 0, 0, 0) : 0;
+    if (!r_is_objc_ptr(ns) && statbar_should_log_tick()) {
+        printf("[STATBAR] overlay: NSString init failed class=0x%llx allocated=0x%llx buf=0x%llx initUTF8=0x%llx\n",
+               gStatBarNSStringClass, allocated, buf, gStatBarInitUTF8Sel);
+    }
     r_free(buf);
     return ns;
 }
@@ -696,8 +749,9 @@ static bool statbar_apply_overlay_layout(uint64_t win, uint64_t label,
     double y = statbar_overlay_y_for_top_area(metrics.topAreaHeight);
 
     if (statbar_should_log_tick()) {
-        printf("[STATBAR] overlay: layout screen=%.1fx%.1f topArea=%.1f frame={%.1f,%.1f,%.1f,%.1f}\n",
-               screenWidth, metrics.screenHeight, metrics.topAreaHeight, x, y, width, kStatBarWinH);
+        printf("[STATBAR] overlay: layout source=%d screen=%.1fx%.1f topArea=%.1f frame={%.1f,%.1f,%.1f,%.1f}\n",
+               metrics.source, screenWidth, metrics.screenHeight, metrics.topAreaHeight,
+               x, y, width, kStatBarWinH);
     }
 
     if (statbar_layout_is_cached(showNet, showCPU, showLabels, x, y, width, kStatBarWinH)) {
@@ -853,6 +907,8 @@ static bool statbar_install_overlay(NSString *text, bool showNet, bool showCPU, 
 // Recursive walk of the SpringBoard status-bar wrapper subview tree, looking
 // for STUIStatusBarStringView (iOS 17+) / _UIStatusBarStringView (iOS 16).
 // Stops when the first label whose -text contains ":" is found (clock).
+// Keep UIKit hierarchy reads on SpringBoard's main thread; recent crash logs
+// showed RemoteCall worker threads PAC-faulting inside -[UIView subviews].
 static uint64_t __attribute__((unused)) walk_for_clock(uint64_t view, uint64_t cls17, uint64_t cls16,
                                                        uint64_t selIsKind, uint64_t selSubviews,
                                                        uint64_t selCount, uint64_t selObjAtIdx,
@@ -865,34 +921,34 @@ static uint64_t __attribute__((unused)) walk_for_clock(uint64_t view, uint64_t c
 
     if (cls17) {
         usleep(20000);
-        if ((r_msg(view, selIsKind, cls17, 0, 0, 0) & 0xff) != 0) goto found;
+        if ((r_msg_main(view, selIsKind, cls17, 0, 0, 0) & 0xff) != 0) goto found;
     }
     if (cls16) {
         usleep(20000);
-        if ((r_msg(view, selIsKind, cls16, 0, 0, 0) & 0xff) != 0) goto found;
+        if ((r_msg_main(view, selIsKind, cls16, 0, 0, 0) & 0xff) != 0) goto found;
     }
     goto recurse;
 
 found: {
         if (!colonStr) return view;
         usleep(20000);
-        uint64_t txt = r_msg(view, selText, 0, 0, 0, 0);
+        uint64_t txt = r_msg_main(view, selText, 0, 0, 0, 0);
         if (!r_is_objc_ptr(txt)) return view;
         usleep(20000);
-        if ((r_msg(txt, selContains, colonStr, 0, 0, 0) & 0xff) != 0) return view;
+        if ((r_msg_main(txt, selContains, colonStr, 0, 0, 0) & 0xff) != 0) return view;
         return view;
     }
 
 recurse: {
         usleep(20000);
-        uint64_t subs = r_msg(view, selSubviews, 0, 0, 0, 0);
+        uint64_t subs = r_msg_main(view, selSubviews, 0, 0, 0, 0);
         if (!r_is_objc_ptr(subs)) return 0;
         usleep(20000);
-        uint64_t cnt = r_msg(subs, selCount, 0, 0, 0, 0);
+        uint64_t cnt = r_msg_main(subs, selCount, 0, 0, 0, 0);
         if (cnt == 0 || cnt > 64) return 0;
         for (uint64_t i = 0; i < cnt; i++) {
             usleep(20000);
-            uint64_t sub = r_msg(subs, selObjAtIdx, i, 0, 0, 0);
+            uint64_t sub = r_msg_main(subs, selObjAtIdx, i, 0, 0, 0);
             if (!r_is_objc_ptr(sub)) continue;
             uint64_t hit = walk_for_clock(sub, cls17, cls16, selIsKind, selSubviews,
                                           selCount, selObjAtIdx, selText, selContains,
@@ -900,10 +956,10 @@ recurse: {
             if (hit) {
                 if (!colonStr) return hit;
                 usleep(20000);
-                uint64_t txt = r_msg(hit, selText, 0, 0, 0, 0);
+                uint64_t txt = r_msg_main(hit, selText, 0, 0, 0, 0);
                 if (r_is_objc_ptr(txt)) {
                     usleep(20000);
-                    if ((r_msg(txt, selContains, colonStr, 0, 0, 0) & 0xff) != 0) return hit;
+                    if ((r_msg_main(txt, selContains, colonStr, 0, 0, 0) & 0xff) != 0) return hit;
                 }
             }
         }

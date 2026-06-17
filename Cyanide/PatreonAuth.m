@@ -51,20 +51,32 @@ static NSDictionary *keychain_base_query(NSString *account)
               (__bridge id)kSecAttrAccount: account };
 }
 
+static NSString *defaults_fallback_key(NSString *account)
+{
+    return [@"CyanidePatreonFallback_" stringByAppendingString:account];
+}
+
 static void keychain_set_string(NSString *account, NSString *_Nullable value)
 {
     NSDictionary *query = keychain_base_query(account);
     SecItemDelete((__bridge CFDictionaryRef)query);
-    if (value.length == 0) return;
+
+    if (value.length == 0) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:defaults_fallback_key(account)];
+        return;
+    }
 
     NSMutableDictionary *add = [query mutableCopy];
     add[(__bridge id)kSecValueData] = [value dataUsingEncoding:NSUTF8StringEncoding];
     add[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlock;
     OSStatus s = SecItemAdd((__bridge CFDictionaryRef)add, NULL);
-    if (s != errSecSuccess) {
-        printf("[PATREON] keychain SecItemAdd(%s) failed: %d\n",
-               account.UTF8String, (int)s);
+    if (s == errSecSuccess) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:defaults_fallback_key(account)];
+        return;
     }
+    printf("[PATREON] keychain SecItemAdd(%s) failed: %d; using defaults fallback\n",
+           account.UTF8String, (int)s);
+    [[NSUserDefaults standardUserDefaults] setObject:value forKey:defaults_fallback_key(account)];
 }
 
 static NSString *_Nullable keychain_get_string(NSString *account)
@@ -74,9 +86,11 @@ static NSString *_Nullable keychain_get_string(NSString *account)
     q[(__bridge id)kSecReturnData] = @YES;
     CFTypeRef out = NULL;
     OSStatus s = SecItemCopyMatching((__bridge CFDictionaryRef)q, &out);
-    if (s != errSecSuccess || out == NULL) return nil;
-    NSData *data = (__bridge_transfer NSData *)out;
-    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (s == errSecSuccess && out != NULL) {
+        NSData *data = (__bridge_transfer NSData *)out;
+        return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+    return [[NSUserDefaults standardUserDefaults] stringForKey:defaults_fallback_key(account)];
 }
 
 #pragma mark - Notification + cached display helpers
@@ -116,7 +130,7 @@ static void update_cached_display(BOOL linked,
     }
     [d setDouble:[[NSDate date] timeIntervalSince1970] forKey:kDefaultsLastRefresh];
 
-    if (changed) post_status_changed();
+    post_status_changed();
 }
 
 #pragma mark - Token

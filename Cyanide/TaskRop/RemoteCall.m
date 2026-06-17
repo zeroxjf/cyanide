@@ -10,9 +10,15 @@
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
 #import <pthread.h>
+#import <errno.h>
 #import <stdint.h>
 #import <stdlib.h>
 #import <string.h>
+#import <sys/mman.h>
+#import <sys/socket.h>
+#import <sys/time.h>
+#import <sys/types.h>
+#import <sys/un.h>
 
 #import "RemoteCall.h"
 #import "VM.h"
@@ -26,6 +32,7 @@
 #import "../kexploit/kutils.h"
 #import "../kexploit/xpaci.h"
 #import "../utils/process.h"
+#import "../cyanide-vphone/vphone_krw.h"
 
 extern bool gIsPACSupported;
 extern kern_return_t mach_vm_deallocate(task_t task, mach_vm_address_t address, mach_vm_size_t size);
@@ -61,6 +68,37 @@ uint64_t g_RC_gadgetPacia = 0;
 static __thread RemoteCallInitFailure g_RC_lastInitFailure = RemoteCallInitFailureNone;
 static __thread uint32_t g_RC_lastInitFailurePid = 0;
 
+extern int proc_listallpids(void *buffer, int buffersize);
+extern int proc_name(int pid, void *buffer, uint32_t buffersize);
+
+static pid_t remote_call_find_userland_pid_by_name(const char *process)
+{
+    if (!process || !process[0]) return 0;
+
+    int count = proc_listallpids(NULL, 0);
+    if (count <= 0 || count > 65536) return 0;
+
+    pid_t *pids = calloc((size_t)count, sizeof(pid_t));
+    if (!pids) return 0;
+
+    int got = proc_listallpids(pids, count * (int)sizeof(pid_t));
+    pid_t found = 0;
+    char nameBuf[1024] = {0};
+    for (int i = 0; i < got && i < count; i++) {
+        pid_t pid = pids[i];
+        if (pid <= 0) continue;
+        memset(nameBuf, 0, sizeof(nameBuf));
+        if (proc_name(pid, nameBuf, sizeof(nameBuf)) <= 0) continue;
+        if (strcmp(nameBuf, process) == 0) {
+            found = pid;
+            break;
+        }
+    }
+
+    free(pids);
+    return found;
+}
+
 typedef struct RemoteCallState {
     uint64_t taskAddr;
     bool creatingExtraThread;
@@ -89,9 +127,11 @@ typedef struct RemoteCallState {
     int firstExceptionTimeoutMS;
     int stableExceptionTimeoutFloorMS;
     bool originalThreadOnly;
+    bool vphoneBridgeMode;
+    int vphoneBridgeFD;
 } RemoteCallState;
 
-static RemoteCallState g_RC_defaultState = { .success = true, .stableExceptionTimeoutFloorMS = 10000 };
+static RemoteCallState g_RC_defaultState = { .success = true, .stableExceptionTimeoutFloorMS = 10000, .vphoneBridgeFD = -1 };
 static __thread RemoteCallState *g_RC_currentState;
 
 @interface RemoteCallSession ()
@@ -144,6 +184,8 @@ static void remote_call_pop_state(RemoteCallState *previous)
 #define g_RC_firstExceptionTimeoutMS (remote_call_current_state()->firstExceptionTimeoutMS)
 #define g_RC_stableExceptionTimeoutFloorMS (remote_call_current_state()->stableExceptionTimeoutFloorMS)
 #define g_RC_originalThreadOnly      (remote_call_current_state()->originalThreadOnly)
+#define g_RC_vphoneBridgeMode        (remote_call_current_state()->vphoneBridgeMode)
+#define g_RC_vphoneBridgeFD          (remote_call_current_state()->vphoneBridgeFD)
 
 static void remote_call_note_init_failure(RemoteCallInitFailure failure, uint32_t pid)
 {
@@ -185,6 +227,264 @@ static bool remote_call_verbose_logging(void)
 }
 
 #define RC_DEBUG(...) do { if (remote_call_verbose_logging()) printf(__VA_ARGS__); } while (0)
+
+#define CY_VPHONE_SB_MAGIC 0x43595342u /* CYSB */
+#define CY_VPHONE_SB_VERSION 1u
+#define CY_VPHONE_SB_SOCKET "/private/var/mobile/Library/Caches/com.zeroxjf.cyanide.vphone-springboard.sock"
+
+enum {
+    CY_VPHONE_SB_CMD_PING = 1,
+    CY_VPHONE_SB_CMD_CALL_NAME = 2,
+    CY_VPHONE_SB_CMD_CALL_ADDR = 3,
+    CY_VPHONE_SB_CMD_READ = 4,
+    CY_VPHONE_SB_CMD_WRITE = 5,
+};
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint32_t cmd;
+    uint64_t addr;
+    uint64_t len;
+    uint64_t args[8];
+    char name[128];
+} cy_vphone_sb_req_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    int32_t status;
+    uint64_t value;
+    uint64_t len;
+} cy_vphone_sb_resp_t;
+
+static bool vphone_bridge_read_full(int fd, void *buf, size_t len)
+{
+    uint8_t *p = (uint8_t *)buf;
+    while (len > 0) {
+        ssize_t n = read(fd, p, len);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        p += (size_t)n;
+        len -= (size_t)n;
+    }
+    return true;
+}
+
+static bool vphone_bridge_write_full(int fd, const void *buf, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)buf;
+    while (len > 0) {
+        ssize_t n = write(fd, p, len);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        p += (size_t)n;
+        len -= (size_t)n;
+    }
+    return true;
+}
+
+static void vphone_bridge_set_timeout(int fd, int timeoutMS)
+{
+    int seconds = 30;
+    if (timeoutMS > 0) {
+        seconds = (timeoutMS + 999) / 1000;
+        if (seconds < 1) seconds = 1;
+        if (seconds > 120) seconds = 120;
+    }
+
+    struct timeval tv = { .tv_sec = seconds, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
+static int vphone_bridge_open_fd(int timeoutMS)
+{
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+
+    vphone_bridge_set_timeout(fd, timeoutMS);
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strlcpy(addr.sun_path, CY_VPHONE_SB_SOCKET, sizeof(addr.sun_path));
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+static bool vphone_bridge_request_on_fd(int fd,
+                                        const cy_vphone_sb_req_t *req,
+                                        const void *writeData,
+                                        size_t writeLen,
+                                        cy_vphone_sb_resp_t *respOut,
+                                        void *readData,
+                                        size_t readLen,
+                                        int timeoutMS)
+{
+    if (fd < 0 || !req || !respOut) return false;
+    vphone_bridge_set_timeout(fd, timeoutMS);
+
+    if (!vphone_bridge_write_full(fd, req, sizeof(*req)) ||
+        (writeData && writeLen > 0 &&
+         !vphone_bridge_write_full(fd, writeData, writeLen))) {
+        return false;
+    }
+
+    cy_vphone_sb_resp_t resp;
+    if (!vphone_bridge_read_full(fd, &resp, sizeof(resp)) ||
+        resp.magic != CY_VPHONE_SB_MAGIC) {
+        return false;
+    }
+
+    if (readData && readLen > 0) {
+        if (resp.status != 0 || resp.len != readLen ||
+            !vphone_bridge_read_full(fd, readData, readLen)) {
+            return false;
+        }
+    }
+
+    *respOut = resp;
+    return resp.status == 0;
+}
+
+bool remote_call_vphone_springboard_bridge_available(void)
+{
+    int fd = vphone_bridge_open_fd(1500);
+    if (fd < 0) return false;
+
+    cy_vphone_sb_req_t req = {
+        .magic = CY_VPHONE_SB_MAGIC,
+        .cmd = CY_VPHONE_SB_CMD_PING,
+    };
+    cy_vphone_sb_resp_t resp = {0};
+    bool ok = vphone_bridge_request_on_fd(fd, &req, NULL, 0, &resp, NULL, 0, 1500) &&
+              resp.value == CY_VPHONE_SB_VERSION;
+    close(fd);
+    return ok;
+}
+
+static void vphone_bridge_close_current(void)
+{
+    if (g_RC_vphoneBridgeFD >= 0) {
+        close(g_RC_vphoneBridgeFD);
+        g_RC_vphoneBridgeFD = -1;
+    }
+}
+
+static bool vphone_bridge_connect_current(int timeoutMS)
+{
+    if (g_RC_vphoneBridgeFD >= 0) return true;
+
+    int fd = vphone_bridge_open_fd(timeoutMS);
+    if (fd < 0) return false;
+
+    g_RC_vphoneBridgeFD = fd;
+    return true;
+}
+
+static bool vphone_bridge_request_current(cy_vphone_sb_req_t *req,
+                                          const void *writeData,
+                                          size_t writeLen,
+                                          cy_vphone_sb_resp_t *resp,
+                                          void *readData,
+                                          size_t readLen,
+                                          int timeoutMS)
+{
+    if (!vphone_bridge_connect_current(timeoutMS)) return false;
+
+    if (!vphone_bridge_request_on_fd(g_RC_vphoneBridgeFD,
+                                    req,
+                                    writeData,
+                                    writeLen,
+                                    resp,
+                                    readData,
+                                    readLen,
+                                    timeoutMS)) {
+        vphone_bridge_close_current();
+        return false;
+    }
+    return true;
+}
+
+static bool remote_call_should_log_result(const char *name, bool stable);
+
+static uint64_t vphone_bridge_call(uint32_t cmd,
+                                   uint64_t pcAddr,
+                                   const char *name,
+                                   int timeout,
+                                   uint64_t x0,
+                                   uint64_t x1,
+                                   uint64_t x2,
+                                   uint64_t x3,
+                                   uint64_t x4,
+                                   uint64_t x5,
+                                   uint64_t x6,
+                                   uint64_t x7)
+{
+    cy_vphone_sb_req_t req = {
+        .magic = CY_VPHONE_SB_MAGIC,
+        .cmd = cmd,
+        .addr = pcAddr,
+        .args = { x0, x1, x2, x3, x4, x5, x6, x7 },
+    };
+    if (name) {
+        strlcpy(req.name, name, sizeof(req.name));
+    }
+
+    cy_vphone_sb_resp_t resp = {0};
+    if (!vphone_bridge_request_current(&req, NULL, 0, &resp, NULL, 0, timeout)) {
+        printf("[RemoteCall] VPHONE SpringBoard bridge call failed: %s status=%d value=0x%llx\n",
+               name ?: "(addr-call)", resp.status, resp.value);
+        g_RC_success = false;
+        return 0;
+    }
+
+    uint64_t retValue = resp.value;
+    if (remote_call_should_log_result(name, true))
+        printf("[%s:%d] %s func's retValue = 0x%llx(%llu) via vphone bridge\n",
+               __FUNCTION__, __LINE__, name ?: "(addr-call)", retValue, retValue);
+    return retValue;
+}
+
+static bool vphone_bridge_remote_read(uint64_t src, void *dst, uint64_t size)
+{
+    if (!src || !dst || !size || size > 0x100000) return false;
+
+    cy_vphone_sb_req_t req = {
+        .magic = CY_VPHONE_SB_MAGIC,
+        .cmd = CY_VPHONE_SB_CMD_READ,
+        .addr = src,
+        .len = size,
+    };
+    cy_vphone_sb_resp_t resp = {0};
+    if (!vphone_bridge_request_current(&req, NULL, 0, &resp, dst, (size_t)size, 5000)) {
+        g_RC_success = false;
+        return false;
+    }
+    return true;
+}
+
+static bool vphone_bridge_remote_write(uint64_t dst, const void *src, uint64_t size)
+{
+    if (!dst || !src || !size || size > 0x100000) return false;
+
+    cy_vphone_sb_req_t req = {
+        .magic = CY_VPHONE_SB_MAGIC,
+        .cmd = CY_VPHONE_SB_CMD_WRITE,
+        .addr = dst,
+        .len = size,
+    };
+    cy_vphone_sb_resp_t resp = {0};
+    if (!vphone_bridge_request_current(&req, src, (size_t)size, &resp, NULL, 0, 5000)) {
+        g_RC_success = false;
+        return false;
+    }
+    return true;
+}
 
 static bool remote_call_should_log_result(const char *name, bool stable)
 {
@@ -638,6 +938,21 @@ uint64_t do_remote_call_stable(int timeout, const char *name,
     uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
     uint64_t x4, uint64_t x5, uint64_t x6, uint64_t x7)
 {
+    if (g_RC_vphoneBridgeMode) {
+        return vphone_bridge_call(CY_VPHONE_SB_CMD_CALL_NAME,
+                                  0,
+                                  name,
+                                  timeout,
+                                  x0,
+                                  x1,
+                                  x2,
+                                  x3,
+                                  x4,
+                                  x5,
+                                  x6,
+                                  x7);
+    }
+
     if (!g_RC_creatingExtraThread)
         return do_remote_call_temp(timeout, name, x0, x1, x2, x3, x4, x5, x6, x7);
 
@@ -654,6 +969,21 @@ uint64_t do_remote_call_stable_addr(int timeout, uint64_t pcAddr, const char *na
     uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
     uint64_t x4, uint64_t x5, uint64_t x6, uint64_t x7)
 {
+    if (g_RC_vphoneBridgeMode) {
+        return vphone_bridge_call(CY_VPHONE_SB_CMD_CALL_ADDR,
+                                  pcAddr,
+                                  name,
+                                  timeout,
+                                  x0,
+                                  x1,
+                                  x2,
+                                  x3,
+                                  x4,
+                                  x5,
+                                  x6,
+                                  x7);
+    }
+
     if (!g_RC_creatingExtraThread)
         return 0;
 
@@ -719,6 +1049,18 @@ bool restore_trojan_thread(arm_thread_state64_internal *state)
 }
 
 void abandon_remote_call(void) {
+    if (g_RC_vphoneBridgeMode) {
+        vphone_bridge_close_current();
+        g_RC_vphoneBridgeMode = false;
+        g_RC_taskAddr = 0;
+        g_RC_pid = 0;
+        g_RC_success = false;
+        g_RC_creatingExtraThread = false;
+        g_RC_trojanMem = 0;
+        g_RC_threadList = [NSMutableArray new];
+        return;
+    }
+
     // Skip every SB-side IPC. Caller has decided that the remote task is dead
     // (typically SpringBoard finished a respawn). Touching the dead trojan
     // would hang for the call timeout. Local resources still need releasing.
@@ -752,6 +1094,21 @@ void abandon_remote_call(void) {
 }
 
 int destroy_remote_call(void) {
+    if (g_RC_vphoneBridgeMode) {
+        if (g_RC_trojanMem) {
+            (void)do_remote_call_stable(100, "munmap", g_RC_trojanMem, PAGE_SIZE, 0, 0, 0, 0, 0, 0);
+        }
+        vphone_bridge_close_current();
+        g_RC_vphoneBridgeMode = false;
+        g_RC_taskAddr = 0;
+        g_RC_pid = 0;
+        g_RC_success = false;
+        g_RC_creatingExtraThread = false;
+        g_RC_trojanMem = 0;
+        g_RC_threadList = [NSMutableArray new];
+        return 0;
+    }
+
     if (!remote_call_has_local_state()) {
         clear_remote_shmem_cache();
         (void)reap_dead_port_names("destroy_remote_call");
@@ -804,7 +1161,9 @@ int destroy_remote_call(void) {
 }
 
 bool remote_call_has_local_state(void) {
-    return g_RC_taskAddr ||
+    return g_RC_vphoneBridgeMode ||
+           g_RC_vphoneBridgeFD >= 0 ||
+           g_RC_taskAddr ||
            MACH_PORT_VALID(g_RC_firstExceptionPort) ||
            MACH_PORT_VALID(g_RC_secondExceptionPort) ||
            g_RC_firstExceptionPortAddr ||
@@ -887,6 +1246,10 @@ struct VMShmem *get_shmem_for_page(uint64_t pageAddr)
 bool remote_read(uint64_t src, void *dst, uint64_t size)
 {
     if (!src || !dst || !size) return false;
+    if (g_RC_vphoneBridgeMode) {
+        return vphone_bridge_remote_read(src, dst, size);
+    }
+
     uint64_t dstAddr = (uint64_t)(uintptr_t)dst;
     uint64_t until = src + size;
 
@@ -958,6 +1321,9 @@ void remote_hexdump(uint64_t remoteAddr, size_t size)
 bool remote_write(uint64_t dst, const void *src, uint64_t size)
 {
     if (!src || !dst || !size) return false;
+    if (g_RC_vphoneBridgeMode) {
+        return vphone_bridge_remote_write(dst, src, size);
+    }
     
     uint64_t srcAddr = (uint64_t)(uintptr_t)src;
     uint64_t until   = dst + size;
@@ -1016,6 +1382,64 @@ uint64_t retry_first_thread(bool useMigFilterBypass) {
 int init_remote_call(const char* process, bool useMigFilterBypass) {
     clear_remote_shmem_cache();
     remote_call_note_init_failure(RemoteCallInitFailureNone, 0);
+    g_RC_success = true;
+    if (g_RC_vphoneBridgeFD == 0) {
+        g_RC_vphoneBridgeFD = -1;
+    }
+
+    if (process && strcmp(process, "SpringBoard") == 0) {
+        bool vphoneBridgeReady = remote_call_vphone_springboard_bridge_available();
+        if (!vphoneBridgeReady && g_vphone_mode) {
+            printf("[RemoteCall] VPHONE SpringBoard bridge unavailable; refusing legacy task-port RemoteCall path\n");
+            g_RC_vphoneBridgeMode = false;
+            remote_call_note_init_failure(RemoteCallInitFailureOther, 0);
+            return -1;
+        }
+
+        if (vphoneBridgeReady) {
+            g_RC_vphoneBridgeMode = true;
+            g_RC_vphoneBridgeFD = -1;
+            if (!vphone_bridge_connect_current(5000)) {
+                printf("[RemoteCall] VPHONE SpringBoard bridge disappeared before init\n");
+                g_RC_vphoneBridgeMode = false;
+                remote_call_note_init_failure(RemoteCallInitFailureOther, 0);
+                return -1;
+            }
+
+            g_RC_creatingExtraThread = true;
+            // vphone bridge mode executes inside SpringBoard through the
+            // TweakLoader-hosted socket server, so the app never needs a real
+            // task port or pid. Avoid the legacy proc_name()/proc_listallpids()
+            // scan here: on vphone's mixed arm64 app / arm64e system userspace it
+            // can be killed by AMFI as a CODESIGNING Invalid Page before the bridge
+            // session is even opened.
+            g_RC_pid = 0;
+            g_RC_success = true;
+            g_RC_threadList = [NSMutableArray new];
+
+            uint64_t mem = do_remote_call_stable(1000,
+                                                 "mmap",
+                                                 0,
+                                                 PAGE_SIZE,
+                                                 VM_PROT_READ | VM_PROT_WRITE,
+                                                 MAP_PRIVATE | MAP_ANON,
+                                                 (uint64_t)-1,
+                                                 0,
+                                                 0,
+                                                 0);
+            if (mem && mem != UINT64_MAX) {
+                g_RC_trojanMem = mem;
+                (void)do_remote_call_stable(100, "memset", g_RC_trojanMem, 0, PAGE_SIZE, 0, 0, 0, 0, 0);
+            } else {
+                g_RC_trojanMem = 0;
+                printf("[RemoteCall] VPHONE SpringBoard bridge could not allocate scratch mmap; continuing without trojanMem\n");
+            }
+
+            printf("[RemoteCall] VPHONE SpringBoard bridge ready (pid=%d) — TweakLoader backend, no app-side KRW needed.\n",
+                   g_RC_pid);
+            return 0;
+        }
+    }
 
     if (!kexploit_krw_ready()) {
         printf("[%s:%d] KRW unavailable; refusing RemoteCall init for %s\n",
@@ -1032,6 +1456,22 @@ int init_remote_call(const char* process, bool useMigFilterBypass) {
                __FUNCTION__, __LINE__, process, procAddr);
     } else {
         procAddr = proc_find_by_name(process);
+        if (!procAddr || procAddr == (uint64_t)-1 ||
+            !is_kaddr_valid(procAddr + off_proc_p_pid)) {
+            pid_t userPid = remote_call_find_userland_pid_by_name(process);
+            if (userPid > 0) {
+                uint64_t byPid = proc_find(userPid);
+                printf("[%s:%d] proc name lookup fallback for %s userPid=%d proc=%#llx\n",
+                       __FUNCTION__, __LINE__, process, userPid, byPid);
+                if (byPid && byPid != (uint64_t)-1 &&
+                    is_kaddr_valid(byPid + off_proc_p_pid)) {
+                    procAddr = byPid;
+                }
+            } else {
+                printf("[%s:%d] userland pid fallback found no process named %s\n",
+                       __FUNCTION__, __LINE__, process);
+            }
+        }
     }
     if (!procAddr || procAddr == (uint64_t)-1 || !is_kaddr_valid(procAddr + off_proc_p_pid)) {
         printf("[%s:%d] process not found or invalid: %s proc=%#llx\n",
@@ -1130,6 +1570,7 @@ int init_remote_call(const char* process, bool useMigFilterBypass) {
              __FUNCTION__, __LINE__, dummyThreadMach);
     uint64_t dummyThreadAddr = task_get_ipc_port_kobject(selfTask, dummyThreadMach);
     if (!is_kaddr_valid(dummyThreadAddr)) {
+        kutils_debug_ipc_port_resolution(selfTask, dummyThreadMach, "dummy-thread");
         printf("[%s:%d] failed to resolve dummy thread kobject mach=0x%x addr=%#llx\n",
                __FUNCTION__, __LINE__, dummyThreadMach, dummyThreadAddr);
         pthread_cancel(dummyThread);
@@ -1157,6 +1598,7 @@ int init_remote_call(const char* process, bool useMigFilterBypass) {
     mach_port_t threadSelf = mach_thread_self();
     uint64_t selfThreadAddr = task_get_ipc_port_kobject(selfTask, threadSelf);
     if (!is_kaddr_valid(selfThreadAddr)) {
+        kutils_debug_ipc_port_resolution(selfTask, threadSelf, "self-thread");
         printf("[%s:%d] failed to resolve self thread kobject mach=0x%x addr=%#llx\n",
                __FUNCTION__, __LINE__, threadSelf, selfThreadAddr);
         pthread_cancel(dummyThread);
@@ -1495,6 +1937,7 @@ int init_remote_call_original_thread_only_with_first_exception_timeout(const cha
     _state.firstExceptionTimeoutMS = firstExceptionTimeoutMS > 0 ? firstExceptionTimeoutMS : 120000;
     _state.stableExceptionTimeoutFloorMS = 10000;
     _state.originalThreadOnly = originalThreadOnly;
+    _state.vphoneBridgeFD = -1;
 
     const char *processName = process.UTF8String;
     if (!processName)

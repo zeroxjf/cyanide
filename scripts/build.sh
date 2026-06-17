@@ -67,6 +67,45 @@ if [ "$SDK" = "iphonesimulator" ]; then
     exit 0
 fi
 
+HELPER_SRC="$PWD/scripts/vphone_krw_helper.c"
+HELPER_ENT="$PWD/scripts/vphone_krw_helper.entitlements"
+HELPER_OUT="$APP_PATH/vphone_krw_helper"
+if [ -f "$HELPER_SRC" ]; then
+    echo "==> building vphone KRW helper"
+    xcrun -sdk iphoneos clang \
+        -arch arm64 \
+        -miphoneos-version-min=15.0 \
+        "$HELPER_SRC" \
+        -o "$HELPER_OUT"
+    chmod 755 "$HELPER_OUT"
+    if command -v ldid >/dev/null 2>&1 && [ -f "$HELPER_ENT" ]; then
+        ldid -S"$HELPER_ENT" "$HELPER_OUT"
+    fi
+fi
+
+BRIDGE_SRC="$PWD/scripts/vphone_springboard_bridge.m"
+BRIDGE_OUT="$APP_PATH/vphone_springboard_bridge.dylib"
+if [ -f "$BRIDGE_SRC" ]; then
+    echo "==> building vphone SpringBoard bridge"
+    xcrun -sdk iphoneos clang \
+        -dynamiclib \
+        -arch arm64 \
+        -arch arm64e \
+        -miphoneos-version-min=15.0 \
+        "$BRIDGE_SRC" \
+        -framework CoreFoundation \
+        -framework Foundation \
+        -o "$BRIDGE_OUT"
+    chmod 755 "$BRIDGE_OUT"
+    if command -v ldid >/dev/null 2>&1; then
+        # This dylib is injected into SpringBoard by TweakLoader/Substrate.
+        # Do not reuse the privileged helper entitlements here: SpringBoard's
+        # AMFI constraint checks reject third-party tweak dylibs that carry
+        # app/helper entitlements before the constructor can start the bridge.
+        ldid -S "$BRIDGE_OUT"
+    fi
+fi
+
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || true)
 if [ -z "$VERSION" ]; then
     echo "error: could not read CFBundleShortVersionString from $APP_PATH/Info.plist" >&2

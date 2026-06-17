@@ -9,6 +9,7 @@
 #import "remote_objc.h"
 #import "../TaskRop/RemoteCall.h"
 #import "../LogTextView.h"
+#import "../cyanide-vphone/vphone_krw.h"
 
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -317,6 +318,15 @@ static double nbl_read_battery_temp_c(void)
         if (nbl_should_trace_apply() || totalMs >= kNBLSlowLogMs) {
             NBL_DEBUG_LOG("[NICEBARLITE][TEMP] source=cache value=%.1fC local=%llums total=%llums\n",
                      cachedTempC, localMs, totalMs);
+        }
+        return cachedTempC;
+    }
+
+    if (g_vphone_mode) {
+        unsigned long long totalMs = nbl_elapsed_ms_since(startUs);
+        if (nbl_should_trace_apply() || totalMs >= kNBLSlowLogMs) {
+            NBL_DEBUG_LOG("[NICEBARLITE][TEMP] source=vphone-skip-remote-iokit value=%.1fC local=%llums total=%llums\n",
+                          cachedTempC, localMs, totalMs);
         }
         return cachedTempC;
     }

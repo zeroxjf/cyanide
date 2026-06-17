@@ -24,10 +24,13 @@
 		AAA297772F72D439000B5902 /* Cyanide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cyanide.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAA2982D2F741178000B5902 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB0A9F7E2FBBBE5100C03573 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
+		FB1B5A5C2FDF420C0054E6C0 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB1C33802FD7B58E000677B5 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB1C38E32FD7CF8A000677B5 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB222AA92FC36B8A001D5118 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB222C212FC3707B001D5118 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
+		FB2F06C12FDD1F7B00F80D6A /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
+		FB2F0A672FDDDD4A00F80D6A /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB4112152FB93FB800461945 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB4117392FB9597C00461945 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB45558C2FC7DA4F004466F5 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
@@ -36,6 +39,8 @@
 		FB45DE262FD022D800076C12 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB5948FE2FC0DFEA006FB8AE /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FB6E0D8C2FD617F8003D17B7 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
+		FB80CD152FE25DDC002563A9 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
+		FB9CBFE82FDF42F1002CEC1A /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FBA008522FB522840080FFE2 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FBA376182FB7FE5600886898 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
 		FBAA37D72FB96407003A81C6 /* ChOma.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ChOma.xcodeproj; sourceTree = "<group>"; };
@@ -204,6 +209,13 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		FB1B5A9F2FDF420C0054E6C0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		FB1C33BF2FD7B58E000677B5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -226,6 +238,20 @@
 			sourceTree = "<group>";
 		};
 		FB222C532FC3707B001D5118 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FB2F07002FDD1F7B00F80D6A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FB2F0AA72FDDDD4A00F80D6A /* Products */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -282,6 +308,20 @@
 			sourceTree = "<group>";
 		};
 		FB6E0DC92FD617F8003D17B7 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FB80CD582FE25DDC002563A9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FB9CC02B2FDF42F1002CEC1A /* Products */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -428,28 +468,16 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
-					ProductGroup = AA73F7C72F7BC6CB00134C31 /* Products */;
-					ProjectRef = AA73F7982F7BC6CB00134C31 /* ChOma.xcodeproj */;
-				},
-				{
 					ProductGroup = FBEF03792FAC52D5005E14B9 /* Products */;
 					ProjectRef = FBEF03482FAC52D5005E14B9 /* ChOma.xcodeproj */;
 				},
 				{
-					ProductGroup = FB41176B2FB9597C00461945 /* Products */;
-					ProjectRef = FB4117392FB9597C00461945 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FBE1CBB32FC0EA040043E3DA /* Products */;
-					ProjectRef = FBE1CB812FC0EA040043E3DA /* ChOma.xcodeproj */;
+					ProductGroup = FB80CD582FE25DDC002563A9 /* Products */;
+					ProjectRef = FB80CD152FE25DDC002563A9 /* ChOma.xcodeproj */;
 				},
 				{
 					ProductGroup = AA794BF82F828668001F0544 /* Products */;
 					ProjectRef = AA794BC92F828668001F0544 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FB0A9FB02FBBBE5100C03573 /* Products */;
-					ProjectRef = FB0A9F7E2FBBBE5100C03573 /* ChOma.xcodeproj */;
 				},
 				{
 					ProductGroup = FB4112462FB93FB800461945 /* Products */;
@@ -468,24 +496,8 @@
 					ProjectRef = FB45558C2FC7DA4F004466F5 /* ChOma.xcodeproj */;
 				},
 				{
-					ProductGroup = FBDA75C92FCB770D00816DA0 /* Products */;
-					ProjectRef = FBDA75932FCB770D00816DA0 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FB45D7D52FD01E4A00076C12 /* Products */;
-					ProjectRef = FB45D79F2FD01E4A00076C12 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FBA008852FB522840080FFE2 /* Products */;
-					ProjectRef = FBA008522FB522840080FFE2 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FBEF02552FAC52BF005E14B9 /* Products */;
-					ProjectRef = FBEF02242FAC52BF005E14B9 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = AAA298312F741178000B5902 /* Products */;
-					ProjectRef = AAA2982D2F741178000B5902 /* ChOma.xcodeproj */;
+					ProductGroup = FB2F0AA72FDDDD4A00F80D6A /* Products */;
+					ProjectRef = FB2F0A672FDDDD4A00F80D6A /* ChOma.xcodeproj */;
 				},
 				{
 					ProductGroup = FB1C33BF2FD7B58E000677B5 /* Products */;
@@ -500,12 +512,76 @@
 					ProjectRef = FBFA38382FB68E0600B9F081 /* ChOma.xcodeproj */;
 				},
 				{
-					ProductGroup = FB6E0DC92FD617F8003D17B7 /* Products */;
-					ProjectRef = FB6E0D8C2FD617F8003D17B7 /* ChOma.xcodeproj */;
-				},
-				{
 					ProductGroup = FBFECADC2FCF1D67006A02BE /* Products */;
 					ProjectRef = FBFECAA52FCF1D67006A02BE /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBE3DA702FD4A45700529B2F /* Products */;
+					ProjectRef = FBE3DA332FD4A45700529B2F /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB1B5A9F2FDF420C0054E6C0 /* Products */;
+					ProjectRef = FB1B5A5C2FDF420C0054E6C0 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB222C532FC3707B001D5118 /* Products */;
+					ProjectRef = FB222C212FC3707B001D5118 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB2F07002FDD1F7B00F80D6A /* Products */;
+					ProjectRef = FB2F06C12FDD1F7B00F80D6A /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB5949302FC0DFEA006FB8AE /* Products */;
+					ProjectRef = FB5948FE2FC0DFEA006FB8AE /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBA376492FB7FE5600886898 /* Products */;
+					ProjectRef = FBA376182FB7FE5600886898 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = AA73F7C72F7BC6CB00134C31 /* Products */;
+					ProjectRef = AA73F7982F7BC6CB00134C31 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB41176B2FB9597C00461945 /* Products */;
+					ProjectRef = FB4117392FB9597C00461945 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBE1CBB32FC0EA040043E3DA /* Products */;
+					ProjectRef = FBE1CB812FC0EA040043E3DA /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB0A9FB02FBBBE5100C03573 /* Products */;
+					ProjectRef = FB0A9F7E2FBBBE5100C03573 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB9CC02B2FDF42F1002CEC1A /* Products */;
+					ProjectRef = FB9CBFE82FDF42F1002CEC1A /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB45D7D52FD01E4A00076C12 /* Products */;
+					ProjectRef = FB45D79F2FD01E4A00076C12 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBDA75C92FCB770D00816DA0 /* Products */;
+					ProjectRef = FBDA75932FCB770D00816DA0 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBA008852FB522840080FFE2 /* Products */;
+					ProjectRef = FBA008522FB522840080FFE2 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FBEF02552FAC52BF005E14B9 /* Products */;
+					ProjectRef = FBEF02242FAC52BF005E14B9 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = AAA298312F741178000B5902 /* Products */;
+					ProjectRef = AAA2982D2F741178000B5902 /* ChOma.xcodeproj */;
+				},
+				{
+					ProductGroup = FB6E0DC92FD617F8003D17B7 /* Products */;
+					ProjectRef = FB6E0D8C2FD617F8003D17B7 /* ChOma.xcodeproj */;
 				},
 				{
 					ProductGroup = FB45DCB52FD01F6700076C12 /* Products */;
@@ -520,24 +596,8 @@
 					ProjectRef = FB1C38E32FD7CF8A000677B5 /* ChOma.xcodeproj */;
 				},
 				{
-					ProductGroup = FBE3DA702FD4A45700529B2F /* Products */;
-					ProjectRef = FBE3DA332FD4A45700529B2F /* ChOma.xcodeproj */;
-				},
-				{
 					ProductGroup = FBE1D66F2FC239CE0043E3DA /* Products */;
 					ProjectRef = FBE1D63D2FC239CE0043E3DA /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FB222C532FC3707B001D5118 /* Products */;
-					ProjectRef = FB222C212FC3707B001D5118 /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FB5949302FC0DFEA006FB8AE /* Products */;
-					ProjectRef = FB5948FE2FC0DFEA006FB8AE /* ChOma.xcodeproj */;
-				},
-				{
-					ProductGroup = FBA376492FB7FE5600886898 /* Products */;
-					ProjectRef = FBA376182FB7FE5600886898 /* ChOma.xcodeproj */;
 				},
 			);
 			projectRoot = "";
@@ -615,7 +675,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1002024;
+				CURRENT_PROJECT_VERSION = 1002025;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 7LGY4NE2VM;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -627,6 +687,8 @@
 				);
 				INFOPLIST_FILE = Cyanide/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cyanide;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cyanide uses your location to show local weather in NiceBar Lite.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -642,6 +704,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/ios",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/iphonesimulator",
+					"$(PROJECT_DIR)/Cyanide/XPF/output/macos",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
@@ -657,7 +720,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/resident/output",
 				);
-				MARKETING_VERSION = 1.2.24;
+				MARKETING_VERSION = 1.2.25;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "$(inherited)";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
@@ -668,7 +731,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/iphonesimulator/libxpf.dylib",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide1";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide";
 				PRODUCT_NAME = Cyanide;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -677,6 +740,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Cyanide/Cyanide-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -689,7 +753,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1002024;
+				CURRENT_PROJECT_VERSION = 1002025;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 7LGY4NE2VM;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -701,6 +765,8 @@
 				);
 				INFOPLIST_FILE = Cyanide/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cyanide;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cyanide uses your location to show local weather in NiceBar Lite.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -716,6 +782,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/ios",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/iphonesimulator",
+					"$(PROJECT_DIR)/Cyanide/XPF/output/macos",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
@@ -731,7 +798,7 @@
 					"$(PROJECT_DIR)/Cyanide/XPF/external/ChOma/external/ios",
 					"$(PROJECT_DIR)/Cyanide/resident/output",
 				);
-				MARKETING_VERSION = 1.2.24;
+				MARKETING_VERSION = 1.2.25;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "$(inherited)";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
@@ -742,7 +809,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Cyanide/XPF/output/iphonesimulator/libxpf.dylib",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide1";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zeroxjf.ios-cyanide";
 				PRODUCT_NAME = Cyanide;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -751,6 +818,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Cyanide/Cyanide-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

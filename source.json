@@ -7,12 +7,12 @@
   "website": "https://github.com/zeroxjf/cyanide",
   "tintColor": "#02D7E0",
   "featuredApps": [
-    "com.zeroxjf.ios-cyanide1"
+    "com.zeroxjf.ios-cyanide"
   ],
   "apps": [
     {
       "name": "Cyanide",
-      "bundleIdentifier": "com.zeroxjf.ios-cyanide1",
+      "bundleIdentifier": "com.zeroxjf.ios-cyanide",
       "developerName": "zeroxjf",
       "subtitle": "Tweak runner on the DarkSword kernel r/w exploit",
       "localizedDescription": "Cyanide is an iOS tweak runner built on top of the DarkSword kernel r/w primitive (CVE-2025-43510 / CVE-2025-43520).\n\nSupported targets:\n\u2022 iOS/iPadOS 17.0 \u2014 18.7.1\n\u2022 iOS/iPadOS 26.0 \u2014 26.0.1\n\u2022 A19/M5 devices are not supported\n\u2022 iOS 18.7.2+ and 26.1+ are out of the exploit window\n\nBundled tweaks:\n\u2022 StatBar \u2014 battery temperature + free RAM overlay\n\u2022 SBCustomizer \u2014 custom dock count and home-screen grid\n\u2022 Powercuff \u2014 CPU/GPU underclocking via thermalmonitord\n\u2022 SpringBoard Tweaks \u2014 App Library, icon fly-in, wake animation, backlight fade, double-tap to lock\n\u2022 OTA Disabler \u2014 toggle launchd disabled.plist\n\u2022 Respring \u2014 in-app WKWebView respring trigger\n\u2022 Axon Lite (beta) \u2014 group Notification Center requests by app\n\u2022 Signal Readouts (beta) \u2014 RSRP dBm on cellular, bar count on WiFi\n\nNot a traditional jailbreak \u2014 tweaks apply in real time over RemoteCall. No respring needed, and force-quitting Cyanide stops live tweaks like StatBar and Axon Lite.",
@@ -20,10 +20,10 @@
       "tintColor": "#02D7E0",
       "versions": [
         {
-          "version": "1.2.24",
-          "date": "2026-06-13",
-          "size": 7604604,
-          "downloadURL": "https://github.com/zeroxjf/cyanide/releases/download/v1.2.24/Cyanide-1.2.24.ipa",
+          "version": "1.2.25",
+          "date": "2026-06-17",
+          "size": 7809795,
+          "downloadURL": "https://github.com/zeroxjf/cyanide/releases/download/v1.2.25/Cyanide-1.2.25.ipa",
           "localizedDescription": "",
           "minOSVersion": "17.0"
         }

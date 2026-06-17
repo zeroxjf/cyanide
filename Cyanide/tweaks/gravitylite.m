@@ -56,7 +56,7 @@ static uint64_t gl_icon_controller(void)
 {
     uint64_t cls = r_class("SBIconController");
     if (!r_is_objc_ptr(cls)) return 0;
-    return r_msg2(cls, "sharedInstance", 0, 0, 0, 0);
+    return gl_safe_msg(cls, "sharedInstance", 0, 0, 0, 0);
 }
 
 static uint64_t gl_icon_manager(uint64_t ctrl)
@@ -168,13 +168,13 @@ static void gl_array_add(uint64_t array, uint64_t obj)
 static uint64_t gl_array_count(uint64_t array)
 {
     if (!r_is_objc_ptr(array)) return 0;
-    return r_msg2(array, "count", 0, 0, 0, 0);
+    return r_msg2_main(array, "count", 0, 0, 0, 0);
 }
 
 static uint64_t gl_array_object(uint64_t array, uint64_t index)
 {
     if (!r_is_objc_ptr(array)) return 0;
-    return r_msg2(array, "objectAtIndex:", index, 0, 0, 0);
+    return r_msg2_main(array, "objectAtIndex:", index, 0, 0, 0);
 }
 
 static uint64_t gl_subviews(uint64_t view)
@@ -652,14 +652,14 @@ static void gl_remove_push_behaviors(uint64_t animator)
     uint64_t behaviors = gl_safe_msg(animator, "behaviors", 0, 0, 0, 0);
     if (!r_is_objc_ptr(pushCls) || !r_is_objc_ptr(behaviors)) return;
 
-    uint64_t copy = r_msg2(behaviors, "copy", 0, 0, 0, 0);
+    uint64_t copy = gl_safe_msg(behaviors, "copy", 0, 0, 0, 0);
     uint64_t list = r_is_objc_ptr(copy) ? copy : behaviors;
     uint64_t count = gl_array_count(list);
     if (count > 256) count = 256;
     for (uint64_t i = 0; i < count; i++) {
         uint64_t behavior = gl_array_object(list, i);
         if (!r_is_objc_ptr(behavior)) continue;
-        if (!r_msg2(behavior, "isKindOfClass:", pushCls, 0, 0, 0)) continue;
+        if (!r_msg2_main(behavior, "isKindOfClass:", pushCls, 0, 0, 0)) continue;
         r_msg2_main(animator, "removeBehavior:", behavior, 0, 0, 0);
     }
     if (copy) gl_release(copy);
@@ -968,11 +968,11 @@ static int gl_collect_large_item_views(uint64_t listView,
     uint8_t depth[QMAX] = {0};
     int head = 0, tail = 0;
 
-    uint64_t subs = r_msg(listView, selSub, 0, 0, 0, 0);
-    uint64_t count = r_is_objc_ptr(subs) ? r_msg(subs, selCnt, 0, 0, 0, 0) : 0;
+    uint64_t subs = r_msg_main(listView, selSub, 0, 0, 0, 0);
+    uint64_t count = r_is_objc_ptr(subs) ? r_msg_main(subs, selCnt, 0, 0, 0, 0) : 0;
     if (count > 96) count = 96;
     for (uint64_t i = 0; i < count && tail < QMAX; i++) {
-        uint64_t child = r_msg(subs, selObj, i, 0, 0, 0);
+        uint64_t child = r_msg_main(subs, selObj, i, 0, 0, 0);
         if (r_is_objc_ptr(child)) {
             q[tail] = child;
             depth[tail] = 0;
@@ -988,7 +988,7 @@ static int gl_collect_large_item_views(uint64_t listView,
         if (!r_is_objc_ptr(view) || gl_item_seen(items, existing + added, view)) continue;
 
         bool isIconView = r_is_objc_ptr(iconViewCls) &&
-                          (r_msg(view, selKind, iconViewCls, 0, 0, 0) & 0xff) != 0;
+                          (r_msg_main(view, selKind, iconViewCls, 0, 0, 0) & 0xff) != 0;
         if (isIconView) continue;
 
         GL_CGRect rect;
@@ -998,11 +998,11 @@ static int gl_collect_large_item_views(uint64_t listView,
         }
 
         if (d >= 3) continue;
-        uint64_t childSubs = r_msg(view, selSub, 0, 0, 0, 0);
-        uint64_t childCount = r_is_objc_ptr(childSubs) ? r_msg(childSubs, selCnt, 0, 0, 0, 0) : 0;
+        uint64_t childSubs = r_msg_main(view, selSub, 0, 0, 0, 0);
+        uint64_t childCount = r_is_objc_ptr(childSubs) ? r_msg_main(childSubs, selCnt, 0, 0, 0, 0) : 0;
         if (childCount > 64) childCount = 64;
         for (uint64_t i = 0; i < childCount && tail < QMAX; i++) {
-            uint64_t child = r_msg(childSubs, selObj, i, 0, 0, 0);
+            uint64_t child = r_msg_main(childSubs, selObj, i, 0, 0, 0);
             if (!r_is_objc_ptr(child) || gl_item_seen(items, existing + added, child)) continue;
             q[tail] = child;
             depth[tail] = d + 1;
@@ -1528,7 +1528,7 @@ bool gravitylite_apply_in_session(GravityLiteConfig config)
 
         uint64_t currentListView = gl_current_root_list_view_ios26_legacy(ctrl);
         if (r_is_objc_ptr(currentListView) &&
-            r_msg2(currentListView, "isKindOfClass:", listViewCls, 0, 0, 0)) {
+            r_msg2_main(currentListView, "isKindOfClass:", listViewCls, 0, 0, 0)) {
             printf("[GRAVITY] Capturing current home screen page...\n");
             if (gl_build_group(groups, currentListView, iconViewCls, config, false, true)) {
                 if (processedCount < LV_CAP) processed[processedCount++] = currentListView;

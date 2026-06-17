@@ -265,9 +265,13 @@ static void rc_refresh_icon_view(uint64_t iconView, uint64_t clsInv,
     if (!iconView) return;
     uint64_t appIconCls = r_class("SBApplicationIcon");
     if (!appIconCls) return;
-    uint64_t icon = rc_safe_msg(iconView, "icon", 0, 0, 0, 0);
+    // UIKit/SpringBoard view access must stay on SpringBoard's main thread.
+    // Calling -icon / -subviews from the RemoteCall worker can trip PAC
+    // exceptions in UIKit view hierarchy code on iOS 26.
+    uint64_t icon = r_responds_main(iconView, "icon")
+        ? r_msg2_main(iconView, "icon", 0, 0, 0, 0) : 0;
     if (!icon) return;
-    if (!r_msg(icon, r_sel("isKindOfClass:"), appIconCls, 0, 0, 0)) return;
+    if (!r_msg_main(icon, r_sel("isKindOfClass:"), appIconCls, 0, 0, 0)) return;
 
     uint64_t selSig     = r_sel("methodSignatureForSelector:");
     uint64_t selWithSig = r_sel("invocationWithMethodSignature:");
@@ -320,18 +324,22 @@ static int rc_refresh_list_view(uint64_t listView, uint64_t clsInv,
     uint64_t clsIconView = r_class("SBIconView");
     if (!clsIconView) return 0;
 
-    uint64_t subs = r_msg(listView, r_sel("subviews"), 0, 0, 0, 0);
+    // Keep UIView hierarchy enumeration on the main thread. A fresh
+    // SpringBoard crash report from a SnowBoard/Layout run showed a
+    // RemoteCall worker thread faulting in -[UIView subviews] with an
+    // arm64e PAC exception.
+    uint64_t subs = r_msg_main(listView, r_sel("subviews"), 0, 0, 0, 0);
     if (!subs) return 0;
-    uint64_t n = r_msg(subs, r_sel("count"), 0, 0, 0, 0);
+    uint64_t n = r_msg_main(subs, r_sel("count"), 0, 0, 0, 0);
     if (n > 512) n = 512;
 
     uint64_t selObjAt = r_sel("objectAtIndex:");
     uint64_t selKind  = r_sel("isKindOfClass:");
     int touched = 0;
     for (uint64_t i = 0; i < n; i++) {
-        uint64_t v = r_msg(subs, selObjAt, i, 0, 0, 0);
+        uint64_t v = r_msg_main(subs, selObjAt, i, 0, 0, 0);
         if (!v) continue;
-        if (!r_msg(v, selKind, clsIconView, 0, 0, 0)) continue;
+        if (!r_msg_main(v, selKind, clsIconView, 0, 0, 0)) continue;
         rc_refresh_icon_view(v, clsInv, info);
         touched++;
         usleep(10000);
@@ -343,12 +351,12 @@ static uint64_t rc_icon_controller(void)
 {
     uint64_t cls = r_class("SBIconController");
     if (!cls) return 0;
-    return r_msg(cls, r_sel("sharedInstance"), 0, 0, 0, 0);
+    return r_msg_main(cls, r_sel("sharedInstance"), 0, 0, 0, 0);
 }
 
 static uint64_t rc_icon_manager_for(uint64_t ctrl)
 {
-    return ctrl ? r_msg(ctrl, r_sel("iconManager"), 0, 0, 0, 0) : 0;
+    return ctrl ? r_msg_main(ctrl, r_sel("iconManager"), 0, 0, 0, 0) : 0;
 }
 
 static uint64_t rc_dock_list_view(uint64_t ctrl, uint64_t mgr)
@@ -358,6 +366,181 @@ static uint64_t rc_dock_list_view(uint64_t ctrl, uint64_t mgr)
         if (dock) return dock;
     }
     return ctrl ? rc_safe_msg(ctrl, "dockListView", 0, 0, 0, 0) : 0;
+}
+
+static int ds_layout_refresh_object(uint64_t obj)
+{
+    if (!r_is_objc_ptr(obj)) return 0;
+
+    int calls = 0;
+    if (r_responds_main(obj, "setNeedsRelayout:")) {
+        r_msg2_main(obj, "setNeedsRelayout:", 1, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "setNeedsLayout")) {
+        r_msg2_main(obj, "setNeedsLayout", 0, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "layoutIfNeeded")) {
+        r_msg2_main(obj, "layoutIfNeeded", 0, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "setNeedsDisplay")) {
+        r_msg2_main(obj, "setNeedsDisplay", 0, 0, 0, 0);
+        calls++;
+    }
+    return calls;
+}
+
+static void ds_layout_add_unique(uint64_t *items, int *count, int cap, uint64_t item)
+{
+    if (!items || !count || *count >= cap || !r_is_objc_ptr(item)) return;
+    for (int i = 0; i < *count; i++) {
+        if (items[i] == item) return;
+    }
+    items[(*count)++] = item;
+}
+
+static int ds_layout_collect_array_lists(uint64_t lists,
+                                         uint64_t *out,
+                                         int count,
+                                         int cap)
+{
+    if (!r_is_objc_ptr(lists) || !out || count >= cap) return count;
+
+    uint64_t n = r_responds_main(lists, "count")
+        ? r_msg2_main(lists, "count", 0, 0, 0, 0) : 0;
+    if (n > 64) n = 64;
+    for (uint64_t i = 0; i < n && count < cap; i++) {
+        uint64_t lv = r_responds_main(lists, "objectAtIndex:")
+            ? r_msg2_main(lists, "objectAtIndex:", i, 0, 0, 0) : 0;
+        ds_layout_add_unique(out, &count, cap, lv);
+    }
+    return count;
+}
+
+static uint64_t ds_layout_root_folder_controller(uint64_t mgr)
+{
+    if (!r_is_objc_ptr(mgr)) return 0;
+    const char *sels[] = {
+        "rootFolderController",
+        "_rootFolderController",
+        "rootFolderViewController",
+        NULL,
+    };
+    for (int i = 0; sels[i]; i++) {
+        if (!r_responds_main(mgr, sels[i])) continue;
+        uint64_t root = r_msg2_main(mgr, sels[i], 0, 0, 0, 0);
+        if (r_is_objc_ptr(root)) return root;
+    }
+    return 0;
+}
+
+static int ds_layout_collect_root_lists(uint64_t mgr, uint64_t *out, int cap)
+{
+    if (!out || cap <= 0) return 0;
+
+    int count = 0;
+    uint64_t rootFC = ds_layout_root_folder_controller(mgr);
+    if (!r_is_objc_ptr(rootFC)) return 0;
+
+    const char *singleSels[] = {
+        "currentIconListView",
+        "currentRootIconListView",
+        "currentIconList",
+        "currentRootIconList",
+        NULL,
+    };
+    for (int i = 0; singleSels[i] && count < cap; i++) {
+        if (!r_responds_main(rootFC, singleSels[i])) continue;
+        uint64_t lv = r_msg2_main(rootFC, singleSels[i], 0, 0, 0, 0);
+        ds_layout_add_unique(out, &count, cap, lv);
+    }
+
+    const char *arraySels[] = {
+        "visibleIconListViews",
+        "iconListViews",
+        NULL,
+    };
+    for (int i = 0; arraySels[i] && count < cap; i++) {
+        if (!r_responds_main(rootFC, arraySels[i])) continue;
+        uint64_t lists = r_msg2_main(rootFC, arraySels[i], 0, 0, 0, 0);
+        count = ds_layout_collect_array_lists(lists, out, count, cap);
+    }
+
+    if (r_responds_main(rootFC, "iconListViewCount") &&
+        r_responds_main(rootFC, "iconListViewAtIndex:")) {
+        uint64_t n = r_msg2_main(rootFC, "iconListViewCount", 0, 0, 0, 0);
+        if (n > 64) n = 64;
+        for (uint64_t i = 0; i < n && count < cap; i++) {
+            uint64_t lv = r_msg2_main(rootFC, "iconListViewAtIndex:", i, 0, 0, 0);
+            ds_layout_add_unique(out, &count, cap, lv);
+        }
+    }
+
+    return count;
+}
+
+static int ds_layout_collect_relevant_lists(uint64_t mgr,
+                                            uint64_t *out,
+                                            int cap)
+{
+    if (!out || cap <= 0) return 0;
+
+    uint64_t clsListView = r_class("SBIconListView");
+    if (!r_is_objc_ptr(clsListView)) return 0;
+
+    int count = 0;
+    uint64_t winLists[64] = {0};
+    int winCount = sb_collect_views_in_windows(clsListView, winLists, 64);
+    for (int i = 0; i < winCount; i++) {
+        ds_layout_add_unique(out, &count, cap, winLists[i]);
+    }
+
+    uint64_t rootLists[64] = {0};
+    int rootCount = ds_layout_collect_root_lists(mgr, rootLists, 64);
+    for (int i = 0; i < rootCount; i++) {
+        ds_layout_add_unique(out, &count, cap, rootLists[i]);
+    }
+
+    if (count == 0 && mgr) {
+        uint64_t rootFC = ds_layout_root_folder_controller(mgr);
+        if (rootFC) {
+            uint64_t rv = r_responds_main(rootFC, "view")
+                ? r_msg2_main(rootFC, "view", 0, 0, 0, 0) : 0;
+            if (!rv && r_responds_main(rootFC, "rootFolderView")) {
+                rv = r_msg2_main(rootFC, "rootFolderView", 0, 0, 0, 0);
+            }
+            uint64_t fallback[64] = {0};
+            int fallbackCount = r_is_objc_ptr(rv)
+                ? sb_collect_views(rv, clsListView, fallback, 64) : 0;
+            for (int i = 0; i < fallbackCount; i++) {
+                ds_layout_add_unique(out, &count, cap, fallback[i]);
+            }
+        }
+    }
+
+    return count;
+}
+
+static int ds_layout_refresh_visible_lists(uint64_t mgr, uint64_t dockLV)
+{
+    enum { LV_CAP = 64 };
+    uint64_t lvs[LV_CAP] = {0};
+    int nlv = ds_layout_collect_relevant_lists(mgr, lvs, LV_CAP);
+
+    int calls = 0;
+    for (int i = 0; i < nlv; i++) {
+        uint64_t lv = lvs[i];
+        if (!r_is_objc_ptr(lv)) continue;
+        calls += ds_layout_refresh_object(lv);
+    }
+    if (r_is_objc_ptr(dockLV)) {
+        calls += ds_layout_refresh_object(dockLV);
+    }
+    printf("[LAYOUT] visible/root list refresh lists=%d dock=0x%llx calls=%d\n",
+           nlv, dockLV, calls);
+    return calls;
 }
 
 bool darksword_layout_home_spacing_in_session(double exL, double exR, double exT, double exB)
@@ -379,7 +562,10 @@ bool darksword_layout_home_spacing_in_session(double exL, double exR, double exT
         .right  = 27.0  + exR,
     };
     bool ok = rc_set_insets_on(cfg, clsInv, &ins);
-    if (ok) rc_force_manager_relayout(mgr, clsInv);
+    if (ok) {
+        rc_force_manager_relayout(mgr, clsInv);
+        ds_layout_refresh_visible_lists(mgr, rc_dock_list_view(ctrl, mgr));
+    }
     return ok;
 }
 
@@ -404,7 +590,10 @@ bool darksword_layout_dock_spacing_in_session(double extraHorizontal)
         .right  = 16.0 + extraHorizontal,
     };
     bool ok = rc_set_insets_on(dockCfg, clsInv, &ins);
-    if (ok) rc_force_manager_relayout(mgr, clsInv);
+    if (ok) {
+        rc_force_manager_relayout(mgr, clsInv);
+        ds_layout_refresh_visible_lists(mgr, dock);
+    }
     return ok;
 }
 
@@ -428,22 +617,15 @@ bool darksword_layout_home_scale_in_session(double scale)
     };
     if (!rc_set_icon_info_on(cfg, clsInv, &info)) return false;
 
-    uint64_t clsListView = r_class("SBIconListView");
     enum { LV_CAP = 64 };
     uint64_t lvs[LV_CAP];
-    int nlv = sb_collect_views_in_windows(clsListView, lvs, LV_CAP);
-    if (nlv == 0) {
-        uint64_t rootFC = rc_safe_msg(mgr, "rootFolderController", 0, 0, 0, 0);
-        if (!rootFC) rootFC = rc_safe_msg(mgr, "_rootFolderController", 0, 0, 0, 0);
-        if (rootFC) {
-            uint64_t rv = rc_safe_msg(rootFC, "view", 0, 0, 0, 0);
-            if (rv) nlv = sb_collect_views(rv, clsListView, lvs, LV_CAP);
-        }
-    }
+    int nlv = ds_layout_collect_relevant_lists(mgr, lvs, LV_CAP);
     for (int i = 0; i < nlv; i++) {
         if (rc_safe_msg(lvs[i], "isDock", 0, 0, 0, 0)) continue;
         rc_refresh_list_view(lvs[i], clsInv, &info);
+        ds_layout_refresh_object(lvs[i]);
     }
+    ds_layout_refresh_visible_lists(mgr, rc_dock_list_view(ctrl, mgr));
     return true;
 }
 
@@ -470,17 +652,19 @@ bool darksword_layout_dock_scale_in_session(double scale)
     if (dockCfg) rc_set_icon_info_on(dockCfg, clsInv, &info);
 
     int touched = rc_refresh_list_view(dock, clsInv, &info);
+    ds_layout_refresh_object(dock);
     if (touched == 0) {
-        uint64_t clsListView = r_class("SBIconListView");
         enum { LV_CAP = 64 };
         uint64_t lvs[LV_CAP];
-        int nlv = sb_collect_views_in_windows(clsListView, lvs, LV_CAP);
+        int nlv = ds_layout_collect_relevant_lists(mgr, lvs, LV_CAP);
         for (int i = 0; i < nlv; i++) {
             if (rc_safe_msg(lvs[i], "isDock", 0, 0, 0, 0)) {
                 rc_refresh_list_view(lvs[i], clsInv, &info);
+                ds_layout_refresh_object(lvs[i]);
             }
         }
     }
+    ds_layout_refresh_visible_lists(mgr, dock);
     return true;
 }
 
@@ -525,15 +709,7 @@ static bool darksword_layout_apply_in_session_ios26(double exL, double exR, doub
 
     enum { LV_CAP = 64 };
     uint64_t lvs[LV_CAP];
-    int nlv = sb_collect_views_in_windows(clsListView, lvs, LV_CAP);
-    if (nlv == 0 && mgr) {
-        uint64_t rootFC = rc_safe_msg(mgr, "rootFolderController", 0, 0, 0, 0);
-        if (!rootFC) rootFC = rc_safe_msg(mgr, "_rootFolderController", 0, 0, 0, 0);
-        if (rootFC) {
-            uint64_t rv = rc_safe_msg(rootFC, "view", 0, 0, 0, 0);
-            if (rv) nlv = sb_collect_views(rv, clsListView, lvs, LV_CAP);
-        }
-    }
+    int nlv = ds_layout_collect_relevant_lists(mgr, lvs, LV_CAP);
     printf("[LAYOUT26] discovered %d SBIconListView(s)\n", nlv);
     if (nlv == 0) return false;
 
@@ -649,6 +825,7 @@ static bool darksword_layout_apply_in_session_ios26(double exL, double exR, doub
                                 NULL, 0, NULL, 0, NULL, 0);
                 printf("[LAYOUT26]   %s transform scale=(%.3f,%.3f) frameWxH=%.1fx%.1f\n",
                        isDock ? "dock" : "home", scaleX, scaleY, w, h);
+                ds_layout_refresh_object(lv);
                 anyOk = true;
             } else {
                 // Reset to identity in case a prior Run left a transform.
@@ -656,6 +833,7 @@ static bool darksword_layout_apply_in_session_ios26(double exL, double exR, doub
                 r_msg2_main_raw(lv, "setTransform:",
                                 identity, sizeof(identity),
                                 NULL, 0, NULL, 0, NULL, 0);
+                ds_layout_refresh_object(lv);
                 anyOk = true;
             }
         }

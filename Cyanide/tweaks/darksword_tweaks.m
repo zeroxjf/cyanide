@@ -24,6 +24,12 @@ static uint64_t ds_try_msg0(uint64_t obj, const char *selName)
     return r_msg2(obj, selName, 0, 0, 0, 0);
 }
 
+static uint64_t ds_try_msg0_main(uint64_t obj, const char *selName)
+{
+    if (!r_is_objc_ptr(obj) || !r_responds_main(obj, selName)) return 0;
+    return r_msg2_main(obj, selName, 0, 0, 0, 0);
+}
+
 static uint64_t ds_object_class(uint64_t obj)
 {
     if (!r_is_objc_ptr(obj)) return 0;
@@ -165,7 +171,7 @@ static void ds_main_set_needs_layout(uint64_t view, const char *tag)
 {
     if (!r_is_objc_ptr(view)) return;
 
-    if (r_responds(view, "setNeedsLayout")) {
+    if (r_responds_main(view, "setNeedsLayout")) {
         uint64_t sel = r_sel("setNeedsLayout");
         r_perform_main(view, sel, 0, false);
         printf("[DST]   %s setNeedsLayout\n", tag);
@@ -177,14 +183,14 @@ static void ds_refresh_root_folder_after_app_library_change(uint64_t rootFC, uin
     printf("[DST:APPLIB] marking root folder views dirty\n");
 
     if (r_is_objc_ptr(rootFC) &&
-        r_responds(rootFC, "currentIconListView")) {
-        uint64_t currentList = r_msg2(rootFC, "currentIconListView", 0, 0, 0, 0);
+        r_responds_main(rootFC, "currentIconListView")) {
+        uint64_t currentList = r_msg2_main(rootFC, "currentIconListView", 0, 0, 0, 0);
         ds_main_set_needs_layout(currentList, "currentIconListView");
     }
 
     ds_main_set_needs_layout(rootView, "rootFolderView");
 
-    uint64_t fcView = ds_try_msg0(rootFC, "view");
+    uint64_t fcView = ds_try_msg0_main(rootFC, "view");
     if (fcView != rootView) {
         ds_main_set_needs_layout(fcView, "rootFolderController.view");
     }
@@ -195,15 +201,15 @@ bool darksword_tweak_disable_app_library_in_session(void)
     printf("[DST:APPLIB] disabling app library\n");
 
     uint64_t clsIC = r_class("SBIconController");
-    uint64_t ctrl = r_is_objc_ptr(clsIC) ? r_msg2(clsIC, "sharedInstance", 0, 0, 0, 0) : 0;
-    uint64_t mgr = ds_try_msg0(ctrl, "iconManager");
-    uint64_t rootFC = ds_try_msg0(mgr, "rootFolderController");
+    uint64_t ctrl = r_is_objc_ptr(clsIC) ? r_msg2_main(clsIC, "sharedInstance", 0, 0, 0, 0) : 0;
+    uint64_t mgr = ds_try_msg0_main(ctrl, "iconManager");
+    uint64_t rootFC = ds_try_msg0_main(mgr, "rootFolderController");
     if (!r_is_objc_ptr(rootFC)) {
         printf("[DST:APPLIB] rootFolderController nil\n");
         return false;
     }
 
-    uint64_t rootView = ds_try_msg0(rootFC, "rootFolderView");
+    uint64_t rootView = ds_try_msg0_main(rootFC, "rootFolderView");
     if (!r_is_objc_ptr(rootView)) {
         printf("[DST:APPLIB] rootFolderView nil\n");
     }
@@ -252,7 +258,7 @@ bool darksword_tweak_disable_icon_fly_in_in_session(void)
     printf("[DST:FLYIN] disabling icon fly-in animation\n");
 
     uint64_t cls = r_class("SBCoverSheetPresentationManager");
-    uint64_t mgr = r_is_objc_ptr(cls) ? r_msg2(cls, "sharedInstance", 0, 0, 0, 0) : 0;
+    uint64_t mgr = r_is_objc_ptr(cls) ? r_msg2_main(cls, "sharedInstance", 0, 0, 0, 0) : 0;
     if (!r_is_objc_ptr(mgr)) {
         printf("[DST:FLYIN] presentation manager missing\n");
         return false;
@@ -275,7 +281,7 @@ bool darksword_tweak_zero_backlight_fade_in_session(void)
     printf("[DST:BLF] zeroing backlight fade durations\n");
 
     uint64_t cls = r_class("SBScreenWakeAnimationController");
-    uint64_t ctrl = r_is_objc_ptr(cls) ? r_msg2(cls, "sharedInstance", 0, 0, 0, 0) : 0;
+    uint64_t ctrl = r_is_objc_ptr(cls) ? r_msg2_main(cls, "sharedInstance", 0, 0, 0, 0) : 0;
     uint64_t selFetch = r_sel("_animationSettingsForBacklightChangeSource:isWake:");
     if (!r_is_objc_ptr(ctrl) || !selFetch) {
         printf("[DST:BLF] wake animation controller missing\n");
@@ -290,7 +296,7 @@ bool darksword_tweak_zero_backlight_fade_in_session(void)
 
     for (int src = 0; src <= 3; src++) {
         for (int isWake = 0; isWake <= 1; isWake++) {
-            uint64_t settings = r_msg(ctrl, selFetch, (uint64_t)src, (uint64_t)isWake, 0, 0);
+            uint64_t settings = r_msg_main(ctrl, selFetch, (uint64_t)src, (uint64_t)isWake, 0, 0);
             usleep(kDSTSettleUS);
             if (!r_is_objc_ptr(settings)) continue;
 
@@ -334,14 +340,14 @@ bool darksword_tweak_zero_wake_animation_in_session(void)
     printf("[DST:WAKE] zeroing wake animation\n");
 
     uint64_t cls = r_class("SBScreenWakeAnimationController");
-    uint64_t ctrl = r_is_objc_ptr(cls) ? r_msg2(cls, "sharedInstance", 0, 0, 0, 0) : 0;
+    uint64_t ctrl = r_is_objc_ptr(cls) ? r_msg2_main(cls, "sharedInstance", 0, 0, 0, 0) : 0;
     uint64_t selFetch = r_sel("_animationSettingsForBacklightChangeSource:isWake:");
     if (!r_is_objc_ptr(ctrl) || !selFetch) {
         printf("[DST:WAKE] wake animation controller missing\n");
         return false;
     }
 
-    uint64_t outer = r_msg(ctrl, selFetch, 0, 1, 0, 0);
+    uint64_t outer = r_msg_main(ctrl, selFetch, 0, 1, 0, 0);
     if (!r_is_objc_ptr(outer)) {
         printf("[DST:WAKE] outer settings nil\n");
         return false;
@@ -433,29 +439,36 @@ bool darksword_tweak_double_tap_to_lock_in_session(void)
 
     bool ok = false;
     uint64_t clsIC = r_class("SBIconController");
-    uint64_t ctrl = r_is_objc_ptr(clsIC) ? r_msg2(clsIC, "sharedInstance", 0, 0, 0, 0) : 0;
-    uint64_t mgr = ds_try_msg0(ctrl, "iconManager");
-    uint64_t rootFC = ds_try_msg0(mgr, "rootFolderController");
-    uint64_t homeView = ds_try_msg0(rootFC, "view");
+    uint64_t ctrl = r_is_objc_ptr(clsIC) ? r_msg2_main(clsIC, "sharedInstance", 0, 0, 0, 0) : 0;
+    uint64_t mgr = ds_try_msg0_main(ctrl, "iconManager");
+    uint64_t rootFC = ds_try_msg0_main(mgr, "rootFolderController");
+    uint64_t homeView = ds_try_msg0_main(rootFC, "view");
     if (r_is_objc_ptr(homeView)) {
         ok |= (ds_install_double_tap_on_view(homeView, sb, selLock, assocKey, "homescreen", true) != DTLockOutcomeFailed);
     }
 
-    uint64_t app = r_msg2(r_class("UIApplication"), "sharedApplication", 0, 0, 0, 0);
-    uint64_t windows = ds_try_msg0(app, "windows");
-    uint64_t count = ds_try_msg0(windows, "count");
+    // UIApplication window enumeration is UIKit state; keep it on
+    // SpringBoard's main thread to avoid RemoteCall worker view-tree faults.
+    uint64_t app = r_msg2_main(r_class("UIApplication"), "sharedApplication", 0, 0, 0, 0);
+    uint64_t windows = ds_try_msg0_main(app, "windows");
+    uint64_t count = ds_try_msg0_main(windows, "count");
     uint64_t limit = count < 20 ? count : 20;
-    int removed = 0, skipped = 0;
+    int installed = 0, alreadyInstalled = 0, failed = 0, skipped = 0;
     for (uint64_t i = 0; i < limit; i++) {
-        uint64_t win = r_msg2(windows, "objectAtIndex:", i, 0, 0, 0);
+        uint64_t win = r_msg2_main(windows, "objectAtIndex:", i, 0, 0, 0);
         if (!r_is_objc_ptr(win) || win == homeView) { skipped++; continue; }
 
         char tag[32];
         snprintf(tag, sizeof(tag), "window[%llu]", i);
-        if (ds_remove_double_tap_from_view(win, assocKey, tag)) removed++;
+        DTLockOutcome r = ds_install_double_tap_on_view(win, sb, selLock, assocKey, tag, false);
+        switch (r) {
+            case DTLockOutcomeInstalled:        installed++; ok = true; break;
+            case DTLockOutcomeAlreadyInstalled: alreadyInstalled++;     break;
+            case DTLockOutcomeFailed:           failed++;               break;
+        }
     }
-    printf("[DST:LOCK] windows scanned=%llu removed=%d skipped=%d\n",
-           limit, removed, skipped);
+    printf("[DST:LOCK] windows scanned=%llu installed=%d already=%d skipped=%d failed=%d\n",
+           limit, installed, alreadyInstalled, skipped, failed);
 
     printf("[DST:LOCK] result=%d\n", ok);
     return ok;

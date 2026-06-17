@@ -2003,7 +2003,7 @@ static bool axn_is_kind_of_cached_class(uint64_t obj, uint64_t cls)
     if (!r_is_objc_ptr(obj) || !r_is_objc_ptr(cls)) return false;
     uint64_t isKindSel = axn_sel_cached(AXNSelIsKindOfClass, "isKindOfClass:");
     if (!isKindSel) return false;
-    uint64_t result = r_msg(obj, isKindSel, cls, 0, 0, 0);
+    uint64_t result = r_msg_main(obj, isKindSel, cls, 0, 0, 0);
     return (result & 0xff) != 0;
 }
 
@@ -2019,14 +2019,16 @@ static uint64_t axn_find_badged_icon_view(uint64_t root, int depth, int *budget)
         return root;
     }
 
-    uint64_t subviews = r_msg2(root, "subviews", 0, 0, 0, 0);
+    // UIKit hierarchy walks must stay on SpringBoard's main thread. Calling
+    // -subviews from RemoteCall worker threads can PAC-fault inside UIKit.
+    uint64_t subviews = r_msg2_main(root, "subviews", 0, 0, 0, 0);
     if (!r_is_objc_ptr(subviews)) return 0;
 
-    uint64_t count = r_msg2(subviews, "count", 0, 0, 0, 0);
+    uint64_t count = r_msg2_main(subviews, "count", 0, 0, 0, 0);
     if (count > 16) count = 16;
 
     for (uint64_t i = 0; i < count && *budget > 0; i++) {
-        uint64_t child = r_msg2(subviews, "objectAtIndex:", i, 0, 0, 0);
+        uint64_t child = r_msg2_main(subviews, "objectAtIndex:", i, 0, 0, 0);
         uint64_t hit = axn_find_badged_icon_view(child, depth + 1, budget);
         if (r_is_objc_ptr(hit)) return hit;
     }
@@ -2036,9 +2038,9 @@ static uint64_t axn_find_badged_icon_view(uint64_t root, int depth, int *budget)
 static uint64_t axn_image_from_badged_icon_view(uint64_t iconHostView)
 {
     if (!r_is_objc_ptr(iconHostView)) return 0;
-    uint64_t prominent = r_msg2(iconHostView, "_prominentImageView", 0, 0, 0, 0);
+    uint64_t prominent = r_msg2_main(iconHostView, "_prominentImageView", 0, 0, 0, 0);
     if (!r_is_objc_ptr(prominent)) return 0;
-    uint64_t image = r_msg2(prominent, "image", 0, 0, 0, 0);
+    uint64_t image = r_msg2_main(prominent, "image", 0, 0, 0, 0);
     return r_is_objc_ptr(image) ? image : 0;
 }
 

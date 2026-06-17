@@ -30,6 +30,8 @@ typedef struct {
 
 static const int    kThemerMaxCache    = 512;
 static const int    kThemerMaxIconBundleCache = 512;
+static const NSUInteger kThemerMaxExplicitApplyTargets = 128;
+static const NSUInteger kThemerMaxExplicitPrefilterAttempts = 256;
 static const size_t kThemerMaxPngBytes = 1 << 18;   // 256 KB hard cap per icon
 static const uint32_t kThemerApplySettleUS = 0;
 static const bool kThemerDetailedIconLogs = false;
@@ -48,6 +50,7 @@ static bool        gThemerModelProbeLogged = false;
 static bool        gThemerIconServicesProbeLogged = false;
 static int         gThemerHostIOSMajor = -1;
 static bool        gThemerVisiblePolicyLogged = false;
+static bool        gThemerVisiblePushEnabled = false;
 
 // -1 unprobed, 0 nothing works, 1/2/3/4 chosen rung.
 static int  gThemerRung              = -1;
@@ -191,6 +194,26 @@ static NSString *themer_join_strings_for_log(id strings, NSUInteger limit)
         [items addObject:[NSString stringWithFormat:@"...(+%lu)", (unsigned long)(total - limit)]];
     }
     return [items componentsJoinedByString:@","];
+}
+
+static NSArray<NSString *> *themer_sorted_strings(id strings)
+{
+    if (![strings respondsToSelector:@selector(allObjects)] &&
+        ![strings respondsToSelector:@selector(countByEnumeratingWithState:objects:count:)]) {
+        return @[];
+    }
+
+    NSArray *raw = [strings respondsToSelector:@selector(allObjects)]
+        ? [strings allObjects]
+        : (NSArray *)strings;
+    NSMutableArray<NSString *> *out = [NSMutableArray arrayWithCapacity:raw.count];
+    for (id obj in raw) {
+        if (![obj isKindOfClass:NSString.class]) continue;
+        NSString *s = (NSString *)obj;
+        if (s.length == 0) continue;
+        [out addObject:s];
+    }
+    return [out sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)];
 }
 
 static NSString *themer_theme_path_for_bundle(NSDictionary<NSString *, NSString *> *pathByBundle,
@@ -551,7 +574,7 @@ static int themer_seed_iconservices_cache(const char *bundle,
     r_msg2(bid, "release", 0, 0, 0, 0);
     if (!r_is_objc_ptr(icon)) return 0;
 
-    uint64_t mgr = r_msg2(mgrCls, "sharedInstance", 0, 0, 0, 0);
+    uint64_t mgr = r_msg2_main(mgrCls, "sharedInstance", 0, 0, 0, 0);
     uint64_t createdIcon = icon;
     uint64_t registered = (r_is_objc_ptr(mgr) &&
                            r_responds_main(mgr, "findOrRegisterIcon:"))
@@ -780,6 +803,13 @@ static uint64_t themer_application_icon_for_iconview(uint64_t iconView)
     return themer_icon_is_application_icon(icon) ? icon : 0;
 }
 
+static uint64_t themer_raw_icon_for_iconview(uint64_t iconView)
+{
+    if (!r_is_objc_ptr(iconView) || !r_responds_main(iconView, "icon")) return 0;
+    uint64_t icon = r_msg2_main(iconView, "icon", 0, 0, 0, 0);
+    return r_is_objc_ptr(icon) ? icon : 0;
+}
+
 static bool themer_should_pin_dynamic_overlay(const char *bundle, uint64_t iconView)
 {
     int major = themer_host_ios_major();
@@ -816,9 +846,11 @@ static bool themer_prefers_view_level_overlay(const char *bundle)
 static bool themer_needs_visible_push(const char *bundle)
 {
     (void)bundle;
-    // Keep SnowBoard Lite on the model/cache path. The visible setter path can
-    // draw an extra image layer above SpringBoard's own rounded icon mask.
-    return false;
+    // Large SnowBoard packs stay on the model/cache path to avoid walking and
+    // repainting hundreds of visible icons. Small/one-icon themes also need a
+    // bounded visible push so the tester sees the changed icon immediately
+    // instead of waiting for SpringBoard to requery the model/cache.
+    return gThemerVisiblePushEnabled;
 }
 
 static NSDictionary<NSString *, NSData *> *themer_normalized_theme_data(NSDictionary<NSString *, NSData *> *input)
@@ -1342,10 +1374,10 @@ static bool themer_read_bundle_for_icon(uint64_t icon,
 
     // Try the SBHApplication path first. On iOS 26 the older leaf identifier
     // selectors can report support but return non-NSString/private values.
-    uint64_t appObj = r_responds(icon, "application")
-        ? r_msg2(icon, "application", 0, 0, 0, 0) : 0;
-    if (r_is_objc_ptr(appObj) && r_responds(appObj, "bundleIdentifier")) {
-        uint64_t bid = r_msg2(appObj, "bundleIdentifier", 0, 0, 0, 0);
+    uint64_t appObj = r_responds_main(icon, "application")
+        ? r_msg2_main(icon, "application", 0, 0, 0, 0) : 0;
+    if (r_is_objc_ptr(appObj) && r_responds_main(appObj, "bundleIdentifier")) {
+        uint64_t bid = r_msg2_main(appObj, "bundleIdentifier", 0, 0, 0, 0);
         if (r_is_objc_ptr(bid) && r_read_nsstring(bid, out, outLen) && out[0]) {
             themer_cache_icon_bundle(icon, out);
             return true;
@@ -1376,9 +1408,9 @@ static bool themer_read_bundle_for_icon(uint64_t icon,
         if (r_is_objc_ptr(appObj)) {
             char appCls[96] = {0};
             themer_read_class_name(appObj, appCls, sizeof(appCls));
-            bool appHasBID = r_responds(appObj, "bundleIdentifier");
+            bool appHasBID = r_responds_main(appObj, "bundleIdentifier");
             uint64_t appBID = appHasBID
-                ? r_msg2(appObj, "bundleIdentifier", 0, 0, 0, 0) : 0;
+                ? r_msg2_main(appObj, "bundleIdentifier", 0, 0, 0, 0) : 0;
             char appBIDStr[160] = {0};
             if (r_is_objc_ptr(appBID)) r_read_nsstring(appBID, appBIDStr, sizeof(appBIDStr));
             printf("[THEMER]   application=0x%llx class=%s bundleIdentifier=\"%s\"\n",
@@ -1918,14 +1950,14 @@ static int themer_collect_model_lookup_roots(uint64_t *roots, int cap)
 
     uint64_t controllerCls = r_class("SBIconController");
     uint64_t controller = (r_is_objc_ptr(controllerCls) &&
-                           r_responds(controllerCls, "sharedInstance"))
-        ? r_msg2(controllerCls, "sharedInstance", 0, 0, 0, 0) : 0;
+                           r_responds_main(controllerCls, "sharedInstance"))
+        ? r_msg2_main(controllerCls, "sharedInstance", 0, 0, 0, 0) : 0;
     themer_add_unique(roots, &count, cap, controller);
 
     uint64_t managerCls = r_class("SBHIconManager");
     uint64_t manager = (r_is_objc_ptr(managerCls) &&
-                        r_responds(managerCls, "sharedInstance"))
-        ? r_msg2(managerCls, "sharedInstance", 0, 0, 0, 0) : 0;
+                        r_responds_main(managerCls, "sharedInstance"))
+        ? r_msg2_main(managerCls, "sharedInstance", 0, 0, 0, 0) : 0;
     themer_add_unique(roots, &count, cap, manager);
 
     const char *childSels[] = {
@@ -1949,16 +1981,14 @@ static int themer_collect_model_lookup_roots(uint64_t *roots, int cap)
     return count;
 }
 
-static uint64_t themer_lookup_model_icon_for_bundle(const char *bundle)
+static uint64_t themer_lookup_model_icon_for_bundle_in_roots(const char *bundle,
+                                                             const uint64_t *roots,
+                                                             int rootCount)
 {
-    if (!bundle || !bundle[0]) return 0;
+    if (!bundle || !bundle[0] || !roots || rootCount <= 0) return 0;
 
     uint64_t bid = r_nsstr_retained(bundle);
     if (!r_is_objc_ptr(bid)) return 0;
-
-    enum { ROOT_CAP = 24 };
-    uint64_t roots[ROOT_CAP] = {0};
-    int rootCount = themer_collect_model_lookup_roots(roots, ROOT_CAP);
 
     const char *lookupSels[] = {
         "applicationIconForBundleIdentifier:",
@@ -2026,12 +2056,28 @@ static uint64_t themer_lookup_model_icon_for_bundle(const char *bundle)
     return found;
 }
 
+static uint64_t themer_lookup_model_icon_for_bundle(const char *bundle)
+{
+    enum { ROOT_CAP = 24 };
+    uint64_t roots[ROOT_CAP] = {0};
+    int rootCount = themer_collect_model_lookup_roots(roots, ROOT_CAP);
+    return themer_lookup_model_icon_for_bundle_in_roots(bundle, roots, rootCount);
+}
+
 static int themer_graft_icon_models_for_theme(NSDictionary<NSString *, NSData *> *dataByBundle,
                                               int *misses)
 {
     int grafted = 0;
     int modelMisses = 0;
-    for (NSString *key in dataByBundle) {
+    enum { ROOT_CAP = 24 };
+    uint64_t roots[ROOT_CAP] = {0};
+    int rootCount = themer_collect_model_lookup_roots(roots, ROOT_CAP);
+    NSArray<NSString *> *keys = themer_sorted_strings(dataByBundle.allKeys);
+    NSUInteger attempted = 0;
+    NSUInteger skippedMissingIcon = 0;
+    printf("[THEMER] model pass starting targets=%lu roots=%d\n",
+           (unsigned long)keys.count, rootCount);
+    for (NSString *key in keys) {
         if (![key isKindOfClass:NSString.class] || key.length == 0) continue;
         const char *bundle = key.UTF8String;
         if (!bundle || !bundle[0]) continue;
@@ -2044,6 +2090,21 @@ static int themer_graft_icon_models_for_theme(NSDictionary<NSString *, NSData *>
         NSData *pngBytes = dataByBundle[key];
         if (![pngBytes isKindOfClass:NSData.class] || pngBytes.length == 0) continue;
 
+        // First verify that SpringBoard has a model icon for this bundle.
+        // Decoding/uploading every PNG before lookup made large SnowBoard
+        // themes look frozen and made one-icon mismatch reports expensive.
+        uint64_t icon = themer_lookup_model_icon_for_bundle_in_roots(bundle, roots, rootCount);
+        attempted++;
+        if (!r_is_objc_ptr(icon)) {
+            skippedMissingIcon++;
+            modelMisses++;
+            if (gThemerLogBudget > 0) {
+                printf("[THEMER] model miss bundle=%s (no SpringBoard model icon)\n", bundle);
+                gThemerLogBudget--;
+            }
+            continue;
+        }
+
         uint64_t image = themer_lookup_cached(bundle);
         if (!image) {
             NSData *uploadBytes = themer_rounded_png_data(pngBytes, bundle);
@@ -2053,12 +2114,6 @@ static int themer_graft_icon_models_for_theme(NSDictionary<NSString *, NSData *>
                 continue;
             }
             themer_cache_image(bundle, image);
-        }
-
-        uint64_t icon = themer_lookup_model_icon_for_bundle(bundle);
-        if (!r_is_objc_ptr(icon)) {
-            modelMisses++;
-            continue;
         }
 
         ThemerEntry *entry = themer_lookup_entry(bundle);
@@ -2074,12 +2129,93 @@ static int themer_graft_icon_models_for_theme(NSDictionary<NSString *, NSData *>
         } else {
             modelMisses++;
         }
+
+        if ((attempted % 16) == 0) {
+            printf("[THEMER] model progress attempted=%lu grafted=%d misses=%d skippedNoIcon=%lu cache=%d\n",
+                   (unsigned long)attempted,
+                   grafted,
+                   modelMisses,
+                   (unsigned long)skippedMissingIcon,
+                   gThemerCacheCount);
+        }
     }
 
     if (misses) *misses += modelMisses;
-    printf("[THEMER] model pass grafted=%d misses=%d cache=%d\n",
-           grafted, modelMisses, gThemerCacheCount);
+    printf("[THEMER] model pass grafted=%d misses=%d skippedNoIcon=%lu cache=%d roots=%d\n",
+           grafted, modelMisses, (unsigned long)skippedMissingIcon,
+           gThemerCacheCount, rootCount);
     return grafted;
+}
+
+static int themer_call_refresh_selectors(uint64_t obj)
+{
+    if (!r_is_objc_ptr(obj)) return 0;
+
+    int called = 0;
+    static const char *selectors[] = {
+        "purgeCachedImages",
+        "clearCachedImages",
+        "invalidateIconImageCache",
+        "_invalidateIconImageCache",
+        "reloadIconImage",
+        "_reloadIconImage",
+        "noteIconImageDidChange",
+        "_noteIconImageDidChange",
+        "setNeedsLayout",
+        "layoutIfNeeded",
+        "setNeedsDisplay",
+        "reloadFolderIcon",
+        "_reloadFolderIcon",
+        "updateFolderIconImage",
+        "_updateFolderIconImage",
+        "updateIconImage",
+        "_updateIconImage",
+        "updateImage",
+        "_updateImage",
+    };
+
+    for (size_t i = 0; i < sizeof(selectors) / sizeof(selectors[0]); i++) {
+        const char *sel = selectors[i];
+        if (!r_responds_main(obj, sel)) continue;
+        r_msg2_main(obj, sel, 0, 0, 0, 0);
+        called++;
+    }
+    return called;
+}
+
+static int themer_refresh_closed_folder_icons(void)
+{
+    static const char *folderViewClassNames[] = {
+        "SBFolderIconView",
+        "SBHFolderIconView",
+    };
+
+    enum { VIEW_CAP = 64 };
+    uint64_t views[VIEW_CAP] = {0};
+    int viewCount = 0;
+    for (size_t c = 0; c < sizeof(folderViewClassNames) / sizeof(folderViewClassNames[0]); c++) {
+        uint64_t cls = r_class(folderViewClassNames[c]);
+        if (!r_is_objc_ptr(cls)) continue;
+        viewCount += sb_collect_views_in_windows(cls, views + viewCount,
+                                                 VIEW_CAP - viewCount);
+        if (viewCount >= VIEW_CAP) break;
+    }
+
+    int refreshed = 0;
+    int selectorCalls = 0;
+    for (int i = 0; i < viewCount; i++) {
+        uint64_t view = views[i];
+        if (!r_is_objc_ptr(view)) continue;
+
+        selectorCalls += themer_call_refresh_selectors(view);
+        uint64_t icon = themer_raw_icon_for_iconview(view);
+        selectorCalls += themer_call_refresh_selectors(icon);
+        refreshed++;
+    }
+
+    printf("[THEMER] folder preview refresh views=%d refreshed=%d calls=%d\n",
+           viewCount, refreshed, selectorCalls);
+    return refreshed;
 }
 
 static bool themer_repaint_cached_views_internal(bool force)
@@ -2217,14 +2353,19 @@ bool themer_apply_data_in_session(NSDictionary<NSString *, NSData *> *imageDataB
         return false;
     }
     imageDataByBundle = themer_normalized_theme_data(imageDataByBundle);
+    gThemerVisiblePushEnabled = imageDataByBundle.count > 0 &&
+        imageDataByBundle.count <= 16;
     printf("[THEMER] apply data entries=%lu cacheCarried=%d\n",
            (unsigned long)imageDataByBundle.count, gThemerCacheCount);
     if (!gThemerVisiblePolicyLogged) {
         gThemerVisiblePolicyLogged = true;
-        printf("[THEMER] visible push policy iosMajor=%d legacyVisible=%d\n",
+        printf("[THEMER] visible push policy iosMajor=%d smallApplyVisible=%d\n",
                themer_host_ios_major(),
                themer_needs_visible_push(NULL));
     }
+    printf("[THEMER] visible push %s for targetCount=%lu\n",
+           gThemerVisiblePushEnabled ? "enabled" : "model-only",
+           (unsigned long)imageDataByBundle.count);
 
     // Drop the per-msgSend settle for the duration of the apply. The stable
     // RemoteCall trampoline already serializes the calls; sleeping before every
@@ -2233,29 +2374,29 @@ bool themer_apply_data_in_session(NSDictionary<NSString *, NSData *> *imageDataB
     uint32_t prevSettle = r_settle_us(kThemerApplySettleUS);
     themer_reset_icon_bundle_cache();
 
-    uint64_t listViewCls = r_class("SBIconListView");
-    uint64_t iconViewCls = r_class("SBIconView");
-    if (!r_is_objc_ptr(listViewCls) || !r_is_objc_ptr(iconViewCls)) {
-        printf("[THEMER] missing class SBIconListView=0x%llx SBIconView=0x%llx\n",
-               (unsigned long long)listViewCls,
-               (unsigned long long)iconViewCls);
-        r_settle_us(prevSettle);
-        return false;
-    }
-
-    enum { LV_CAP = 64 };
-    uint64_t lvs[LV_CAP];
-    int nlv = sb_collect_views_in_windows(listViewCls, lvs, LV_CAP);
-    if (nlv == 0) {
-        printf("[THEMER] no SBIconListView visible (home screen not active?)\n");
-        r_settle_us(prevSettle);
-        return false;
-    }
-
     int rungHits[4] = {0};
     int misses = 0;
     int modelGrafted = themer_graft_icon_models_for_theme(imageDataByBundle,
                                                           &misses);
+    int folderRefresh = modelGrafted > 0 ? themer_refresh_closed_folder_icons() : 0;
+
+    uint64_t listViewCls = r_class("SBIconListView");
+    uint64_t iconViewCls = r_class("SBIconView");
+    enum { LV_CAP = 64 };
+    uint64_t lvs[LV_CAP] = {0};
+    int nlv = 0;
+    if (r_is_objc_ptr(listViewCls) && r_is_objc_ptr(iconViewCls)) {
+        nlv = sb_collect_views_in_windows(listViewCls, lvs, LV_CAP);
+    } else {
+        printf("[THEMER] visible push skipped: missing class SBIconListView=0x%llx SBIconView=0x%llx\n",
+               (unsigned long long)listViewCls,
+               (unsigned long long)iconViewCls);
+    }
+
+    if (nlv == 0) {
+        printf("[THEMER] visible push skipped: no SBIconListView visible (home screen not active?)\n");
+    }
+
     int applied = 0;
     for (int i = 0; i < nlv; i++) {
         applied += themer_iter_iconviews(lvs[i], imageDataByBundle, iconViewCls,
@@ -2264,13 +2405,17 @@ bool themer_apply_data_in_session(NSDictionary<NSString *, NSData *> *imageDataB
 
     r_settle_us(prevSettle);
     uint64_t elapsedUS = themer_now_us() - startUS;
-    printf("[THEMER] done lists=%d model=%d applied=%d misses=%d rungs={1:%d,2:%d,3:%d,4:%d} cache=%d elapsed=%llums settle=%uus\n",
-           nlv, modelGrafted, applied, misses,
+    printf("[THEMER] done lists=%d model=%d folderRefresh=%d applied=%d misses=%d rungs={1:%d,2:%d,3:%d,4:%d} cache=%d elapsed=%llums settle=%uus\n",
+           nlv, modelGrafted, folderRefresh, applied, misses,
            rungHits[0], rungHits[1], rungHits[2], rungHits[3],
            gThemerCacheCount,
            (unsigned long long)(elapsedUS / 1000ULL),
            kThemerApplySettleUS);
-    return applied > 0;
+    bool ok = applied > 0 || modelGrafted > 0;
+    if (!ok) {
+        printf("[THEMER][WARN] no icons changed; check that the theme PNG names match installed app bundle IDs and that SpringBoard is on a Home Screen page with matching icons\n");
+    }
+    return ok;
 }
 
 bool themer_apply_in_session(const char *themePath)
@@ -2337,10 +2482,22 @@ bool themer_apply_in_session(const char *themePath)
            themePath, (unsigned long)availableCount, (unsigned long)aliasKeyCount);
     if (availableCount == 0) return false;
 
-    NSSet<NSString *> *visible = themer_collect_visible_bundles();
-    printf("[THEMER] visible bundles count=%lu list=%s\n",
-           (unsigned long)visible.count,
-           themer_join_strings_for_log(visible, 160).UTF8String);
+    BOOL largeThemeMode = explicitFileBundles.count > kThemerMaxExplicitApplyTargets;
+    if (largeThemeMode) {
+        printf("[THEMER] large theme mode explicit=%lu cap=%lu; skipping expensive visible pre-scan and applying priority/system/alias plus capped explicit subset\n",
+               (unsigned long)explicitFileBundles.count,
+               (unsigned long)kThemerMaxExplicitApplyTargets);
+    }
+    NSSet<NSString *> *visible = [NSSet set];
+    if (!largeThemeMode) {
+        printf("[THEMER] collecting visible bundles...\n");
+        visible = themer_collect_visible_bundles();
+        printf("[THEMER] visible bundles count=%lu list=%s\n",
+               (unsigned long)visible.count,
+               themer_join_strings_for_log(visible, 160).UTF8String);
+    } else {
+        printf("[THEMER] visible bundles skipped for large theme; model prelookup will skip non-installed icons before upload\n");
+    }
     printf("[THEMER] explicit file bundles count=%lu list=%s\n",
            (unsigned long)explicitFileBundles.count,
            themer_join_strings_for_log(explicitFileBundles, 200).UTF8String);
@@ -2352,18 +2509,54 @@ bool themer_apply_in_session(const char *themePath)
            themer_join_strings_for_log(aliasTargetBundles, 240).UTF8String);
     NSMutableSet<NSString *> *targetBundles = [visible mutableCopy];
     NSUInteger explicitAdded = 0;
+    NSUInteger explicitSkipped = 0;
+    NSUInteger explicitSkippedNoIcon = 0;
+    NSUInteger explicitPrefilterAttempts = 0;
+    NSUInteger explicitPrefilterAttemptCapHit = 0;
     NSUInteger priorityAdded = 0;
     NSUInteger appleAdded = 0;
     NSUInteger aliasAdded = 0;
-    for (NSString *bid in explicitFileBundles) {
+    enum { MODEL_ROOT_CAP = 24 };
+    uint64_t modelRoots[MODEL_ROOT_CAP] = {0};
+    int modelRootCount = 0;
+    if (largeThemeMode) {
+        modelRootCount = themer_collect_model_lookup_roots(modelRoots, MODEL_ROOT_CAP);
+        printf("[THEMER] large theme model prefilter roots=%d\n", modelRootCount);
+    }
+    for (NSString *bid in themer_sorted_strings(explicitFileBundles)) {
         if (![bid isKindOfClass:NSString.class] || bid.length == 0) continue;
         if ([targetBundles containsObject:bid]) continue;
-        if (themer_theme_path_for_bundle(pathByBundle, bid)) {
-            [targetBundles addObject:bid];
-            explicitAdded++;
+        NSString *path = themer_theme_path_for_bundle(pathByBundle, bid);
+        if (!path) continue;
+        if (largeThemeMode) {
+            if (explicitPrefilterAttempts >= kThemerMaxExplicitPrefilterAttempts) {
+                explicitPrefilterAttemptCapHit++;
+                explicitSkipped++;
+                continue;
+            }
+            explicitPrefilterAttempts++;
+            if ((explicitPrefilterAttempts % 32) == 0) {
+                printf("[THEMER] large theme prefilter progress attempted=%lu added=%lu skippedNoIcon=%lu skipped=%lu\n",
+                       (unsigned long)explicitPrefilterAttempts,
+                       (unsigned long)explicitAdded,
+                       (unsigned long)explicitSkippedNoIcon,
+                       (unsigned long)explicitSkipped);
+            }
+            if (!r_is_objc_ptr(themer_lookup_model_icon_for_bundle_in_roots(bid.UTF8String,
+                                                                            modelRoots,
+                                                                            modelRootCount))) {
+                explicitSkippedNoIcon++;
+                continue;
+            }
         }
+        if (largeThemeMode && explicitAdded >= kThemerMaxExplicitApplyTargets) {
+            explicitSkipped++;
+            continue;
+        }
+        [targetBundles addObject:bid];
+        explicitAdded++;
     }
-    for (NSString *bid in appleSystemBundles) {
+    for (NSString *bid in themer_sorted_strings(appleSystemBundles)) {
         if (![bid isKindOfClass:NSString.class] || bid.length == 0) continue;
         if ([targetBundles containsObject:bid]) continue;
         if (themer_theme_path_for_bundle(pathByBundle, bid)) {
@@ -2371,7 +2564,7 @@ bool themer_apply_in_session(const char *themePath)
             appleAdded++;
         }
     }
-    for (NSString *bid in aliasTargetBundles) {
+    for (NSString *bid in themer_sorted_strings(aliasTargetBundles)) {
         if (![bid isKindOfClass:NSString.class] || bid.length == 0) continue;
         if ([targetBundles containsObject:bid]) continue;
         if (themer_theme_path_for_bundle(pathByBundle, bid)) {
@@ -2393,22 +2586,29 @@ bool themer_apply_in_session(const char *themePath)
     NSMutableDictionary<NSString *, NSData *> *dict = [NSMutableDictionary dictionary];
     NSMutableArray<NSString *> *matchedBundles = [NSMutableArray array];
     NSUInteger caseFallbacks = 0;
-    for (NSString *bid in targetBundles) {
-        NSString *path = themer_theme_path_for_bundle(pathByBundle, bid);
-        if (path && !pathByBundle[bid]) {
-            caseFallbacks++;
-        }
-        if (!path) continue;
-        NSData *bytes = [NSData dataWithContentsOfFile:path];
-        if (bytes.length) {
-            dict[bid] = bytes;
-            [matchedBundles addObject:bid];
+    NSUInteger loadFailures = 0;
+    for (NSString *bid in themer_sorted_strings(targetBundles)) {
+        @autoreleasepool {
+            NSString *path = themer_theme_path_for_bundle(pathByBundle, bid);
+            if (path && !pathByBundle[bid]) {
+                caseFallbacks++;
+            }
+            if (!path) continue;
+            NSData *bytes = [NSData dataWithContentsOfFile:path
+                                                   options:NSDataReadingMappedIfSafe
+                                                     error:NULL];
+            if (bytes.length) {
+                dict[bid] = bytes;
+                [matchedBundles addObject:bid];
+            } else {
+                loadFailures++;
+            }
         }
     }
     printf("[THEMER] matched bundles count=%lu list=%s\n",
            (unsigned long)matchedBundles.count,
            themer_join_strings_for_log(matchedBundles, 240).UTF8String);
-    printf("[THEMER] apply loaded=%lu matched of %lu target (%lu visible + %lu explicit + %lu apple + %lu alias + %lu priority), %lu available caseFallbacks=%lu\n",
+    printf("[THEMER] apply loaded=%lu matched of %lu target (%lu visible + %lu explicit + %lu apple + %lu alias + %lu priority), %lu available explicitSkipped=%lu explicitNoIcon=%lu prefilterAttempts=%lu prefilterCapSkipped=%lu loadFailures=%lu caseFallbacks=%lu\n",
            (unsigned long)dict.count,
            (unsigned long)targetBundles.count,
            (unsigned long)visible.count,
@@ -2417,7 +2617,15 @@ bool themer_apply_in_session(const char *themePath)
            (unsigned long)aliasAdded,
            (unsigned long)priorityAdded,
            (unsigned long)availableCount,
+           (unsigned long)explicitSkipped,
+           (unsigned long)explicitSkippedNoIcon,
+           (unsigned long)explicitPrefilterAttempts,
+           (unsigned long)explicitPrefilterAttemptCapHit,
+           (unsigned long)loadFailures,
            (unsigned long)caseFallbacks);
+    if (dict.count == 0) {
+        printf("[THEMER][WARN] no theme PNGs were loaded for selected targets; check theme file names and import result\n");
+    }
     return themer_apply_data_in_session(dict);
 }
 

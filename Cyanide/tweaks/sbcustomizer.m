@@ -21,6 +21,12 @@ static uint64_t try_msg0(uint64_t obj, const char *selName)
     return r_msg2(obj, selName, 0, 0, 0, 0);
 }
 
+static uint64_t try_msg0_main(uint64_t obj, const char *selName)
+{
+    if (!r_is_objc_ptr(obj) || !r_responds_main(obj, selName)) return 0;
+    return r_msg2_main(obj, selName, 0, 0, 0, 0);
+}
+
 static void disable_list_autofit(uint64_t listView, const char *tag)
 {
     if (!r_is_objc_ptr(listView) || !r_responds(listView, "setAutomaticallyAdjustsLayoutMetricsToFit:")) return;
@@ -34,6 +40,42 @@ static uint64_t list_view_model(uint64_t listView)
     if (!model) model = try_msg0(listView, "iconListModel");
     if (!model) model = try_msg0(listView, "displayedModel");
     return model;
+}
+
+static int refresh_layout_object(uint64_t obj)
+{
+    if (!r_is_objc_ptr(obj)) return 0;
+
+    int calls = 0;
+    if (r_responds_main(obj, "setNeedsRelayout:")) {
+        r_msg2_main(obj, "setNeedsRelayout:", 1, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "setNeedsLayout")) {
+        r_msg2_main(obj, "setNeedsLayout", 0, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "layoutIfNeeded")) {
+        r_msg2_main(obj, "layoutIfNeeded", 0, 0, 0, 0);
+        calls++;
+    }
+    if (r_responds_main(obj, "setNeedsDisplay")) {
+        r_msg2_main(obj, "setNeedsDisplay", 0, 0, 0, 0);
+        calls++;
+    }
+    return calls;
+}
+
+static int refresh_icon_manager_layout(uint64_t mgr)
+{
+    if (!r_is_objc_ptr(mgr)) return 0;
+
+    int calls = refresh_layout_object(mgr);
+    if (r_responds_main(mgr, "relayout")) {
+        r_msg2_main(mgr, "relayout", 0, 0, 0, 0);
+        calls++;
+    }
+    return calls;
 }
 
 static bool patch_list_model_grid(uint64_t listView, const char *tag, int cols, int rows)
@@ -59,7 +101,9 @@ static bool patch_list_model_grid(uint64_t listView, const char *tag, int cols, 
     }
 
     uint64_t afterGrid = r_msg2(model, "gridSize", 0, 0, 0, 0) & 0xffffffffULL;
-    printf("[SBC] v3: %s model gridSize 0x%llx -> 0x%llx\n", tag, oldGrid, afterGrid);
+    int refreshCalls = refresh_layout_object(listView);
+    printf("[SBC] v3: %s model gridSize 0x%llx -> 0x%llx refresh=%d\n",
+           tag, oldGrid, afterGrid, refreshCalls);
     return afterGrid == newGrid;
 }
 
@@ -99,28 +143,26 @@ static void patch_dock(uint64_t iconCtrl, int dockIcons)
     }
     usleep(50000);
 
-    if (r_responds(dock, "setNeedsLayout")) {
-        uint64_t selSetNeedsLayout = r_sel("setNeedsLayout");
-        r_perform_main(dock, selSetNeedsLayout, 0, false);
-    }
+    int refreshCalls = refresh_layout_object(dock);
+    printf("[SBC] dock: refresh=%d\n", refreshCalls);
 }
 
 static int patch_homescreen_list_models_v3(uint64_t mgr, int cols, int rows)
 {
-    uint64_t rootFolder = try_msg0(mgr, "rootFolderController");
+    uint64_t rootFolder = try_msg0_main(mgr, "rootFolderController");
     if (!r_is_objc_ptr(rootFolder)) {
         printf("[SBC] v3: nil rootFolderController\n");
         return 0;
     }
 
     int touched = 0;
-    if (r_responds(rootFolder, "iconListViewCount") &&
-        r_responds(rootFolder, "iconListViewAtIndex:")) {
-        uint64_t count = r_msg2(rootFolder, "iconListViewCount", 0, 0, 0, 0);
+    if (r_responds_main(rootFolder, "iconListViewCount") &&
+        r_responds_main(rootFolder, "iconListViewAtIndex:")) {
+        uint64_t count = r_msg2_main(rootFolder, "iconListViewCount", 0, 0, 0, 0);
         uint64_t limit = count < 64 ? count : 64;
         printf("[SBC] v3: iconListViewCount=%llu\n", count);
         for (uint64_t i = 0; i < limit; i++) {
-            uint64_t listView = r_msg2(rootFolder, "iconListViewAtIndex:", i, 0, 0, 0);
+            uint64_t listView = r_msg2_main(rootFolder, "iconListViewAtIndex:", i, 0, 0, 0);
             if (!r_is_objc_ptr(listView)) continue;
 
             char tag[32];
@@ -128,20 +170,23 @@ static int patch_homescreen_list_models_v3(uint64_t mgr, int cols, int rows)
             disable_list_autofit(listView, tag);
             if (patch_list_model_grid(listView, tag, cols, rows)) touched++;
         }
-    } else if (r_responds(rootFolder, "currentIconListView")) {
-        uint64_t current = r_msg2(rootFolder, "currentIconListView", 0, 0, 0, 0);
+    } else if (r_responds_main(rootFolder, "currentIconListView")) {
+        uint64_t current = r_msg2_main(rootFolder, "currentIconListView", 0, 0, 0, 0);
         disable_list_autofit(current, "currentIconListView");
         if (patch_list_model_grid(current, "currentIconListView", cols, rows)) touched++;
     } else {
         printf("[SBC] v3: no list-view accessor path\n");
     }
 
-    uint64_t dockListView = try_msg0(mgr, "dockListView");
+    uint64_t dockListView = try_msg0_main(mgr, "dockListView");
     if (r_is_objc_ptr(dockListView)) {
         disable_list_autofit(dockListView, "dockListView");
+        refresh_layout_object(dockListView);
     }
 
-    printf("[SBC] v3: patched home list models=%d\n", touched);
+    int managerRefresh = refresh_icon_manager_layout(mgr);
+    printf("[SBC] v3: patched home list models=%d managerRefresh=%d\n",
+           touched, managerRefresh);
     return touched;
 }
 
@@ -215,7 +260,7 @@ bool sbcustomizer_apply_in_session(int dockIcons, int hsCols, int hsRows, bool h
         if (!cls) { printf("[SBC] SBIconController missing\n"); break; }
         usleep(50000);
 
-        uint64_t iconCtrl = r_msg2(cls, "sharedInstance", 0, 0, 0, 0);
+        uint64_t iconCtrl = r_msg2_main(cls, "sharedInstance", 0, 0, 0, 0);
         if (!iconCtrl) { printf("[SBC] +sharedInstance nil\n"); break; }
         printf("[SBC] iconCtrl=0x%llx\n", iconCtrl);
 
